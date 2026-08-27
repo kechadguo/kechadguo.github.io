@@ -1,0 +1,18 @@
+{
+  "type": "R21-PWA-VALIDATION",
+  "revision": "R21",
+  "status": "PASS",
+  "staticOnly": true,
+  "htmlCssJsReferences": {"status":"PASS","count":47,"missing":[]},
+  "javascriptSyntax": {"status":"PASS","filesChecked":52},
+  "manifest": {"status":"PASS","name":"成长日记","short_name":"成长日记","start_url":"./","scope":"./","display":"standalone","orientation":"portrait-primary","theme_color":"#E8927C","background_color":"#FAF8F5","icons":["./img/icons/icon-192.png","./img/icons/icon-512.png"]},
+  "serviceWorker": {"status":"PASS","cacheName":"oneone-production-r21","precacheAssetCount":25,"missingPrecacheAssets":[],"relativePaths":true,"syntheticAssets":0,"dynamicApiStaticCache":false,"serviceWorkerSelfLongCache":false,"installFailureHidden":false},
+  "pagesStaticLoad": "20/20 PASS",
+  "responsive": {"390x844":"PASS","375x812":"PASS","430x932":"PASS"},
+  "syntheticMockCheck": {"status":"PASS","hits":0},
+  "sensitiveFileCheck": {"status":"PASS","hits":0},
+  "zip": {"entries":146,"indexAtRoot":true,"nestedBuildFolder":false,"fileCountUnder1000":true,"maxUncompressedFileBytes":2473730,"singleFileUnder25MiB":true},
+  "productionFunctionCalls": false,
+  "productionDatabaseReadWrite": false,
+  "cloudflareLoginOrUpload": false
+}

@@ -1,0 +1,276 @@
+/**
+ * 页面路由 — 委派到各页面模块（4-tab 导航 + 子页面）
+ */
+window.Pages = {
+  currentTab: 'dashboard',
+  history: [],
+
+  async render(page, params) {
+    if (page === 'sleep-training') page = 'sleep-management';
+    const content = document.getElementById('content');
+    const backBtn = document.getElementById('btn-back');
+    const titleEl = document.getElementById('page-title');
+
+    // R10 K4：v2 通道切换页面先出骨架屏（页面 render 内部用真实内容覆盖；
+    // 同步页 <300ms 覆盖不闪烁；异步页数据到达前显示呼吸块 → CLS 友好）
+    if (window.__UI_V3__ && content) {
+      const kind = page === 'report' ? 'report' : (page === 'dashboard' ? 'dashboard' : 'list');
+      content.innerHTML = Utils.skeletonHTML(kind);
+    }
+
+    // 底部 tab 高亮
+    $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+
+    // 页面标题和返回按钮
+    const pageConfig = {
+      dashboard: { title: 'OneOne', showBack: false },
+      'quick-record': { title: '快速记录', showBack: false },
+      analytics: { title: '数据分析', showBack: false },
+      functions: { title: '功能', showBack: false },
+      'parenting-lib': { title: '育儿百科', showBack: true },
+      assistant: { title: 'AI助手', showBack: false },
+      messages: { title: '消息中心', showBack: true },
+      parenting: { title: '成长日记', showBack: true },
+      milestone: { title: '里程碑', showBack: true },
+      report: { title: '数据报表', showBack: true },
+      'growth-curve': { title: '成长曲线', showBack: true },
+      'sleep-management': { title: '睡眠管理', showBack: true },
+      'language-development': { title: '语言发展', showBack: true },
+      'social-development': { title: '社交发展', showBack: true },
+      safety: { title: '安全与急救', showBack: true },
+      food: { title: '辅食', showBack: true },
+      medical: { title: '健康管理', showBack: true },
+      footprint: { title: '足迹', showBack: true },
+      exercise: { title: '运动发展', showBack: true },
+      'exercise-development': { title: '运动发展', showBack: true },
+      'early-education': { title: '早期教育', showBack: true },
+      profile: { title: '设置', showBack: true },
+      screening: { title: '新生儿筛查', showBack: true },
+      onboarding: { title: '欢迎使用', showBack: false },
+      'feeding-success': { title: '记录成功', showBack: true },
+      'stool-success': { title: '记录成功', showBack: true }
+    };
+
+    const cfg = pageConfig[page] || { title: '成长日记', showBack: true };
+    titleEl.textContent = cfg.title;
+    backBtn.style.display = cfg.showBack ? '' : 'none';
+
+    this.currentTab = page;
+
+    // 如果不是底部tab页面，记录历史
+    if (!['dashboard', 'quick-record', 'analytics', 'functions', 'assistant'].includes(page)) {
+      this.history.push(page);
+    }
+
+    // 委派渲染；完整页面脚本由构建入口预加载，保持真实 handler 不变
+    switch (page) {
+      case 'dashboard':
+        await DashboardPage.render(content);
+        break;
+      case 'quick-record':
+        await QuickRecordPage.render(content);
+        break;
+      case 'analytics':
+        if (window.AnalyticsPage) {
+          await AnalyticsPage.render(content);
+        } else {
+          content.innerHTML = '<div class="loading-state"><p>加载中...</p></div>';
+        }
+        break;
+      case 'functions':
+        ModulesPage.render(content);
+        break;
+      case 'assistant':
+        content.innerHTML = `<div class="card"><div class="card-title">${Lucide.icon('bot', 20)} AI助手</div><div class="ai-disabled-label" role="status">AI功能暂未启用</div><p class="text-muted" style="margin-top:10px">当前版本仅提供确定性知识入口，不连接模型或外部服务。</p><button class="btn btn-outline btn-block" style="margin-top:14px" onclick="showPage('parenting-lib')">${Lucide.icon('book-open', 18)} 浏览育儿百科</button></div>`;
+        break;
+      case 'messages':
+        content.innerHTML = `<div class="card"><div class="card-title">${Lucide.icon('inbox', 20)} 消息中心</div><p class="text-muted">暂无消息</p></div>`;
+        break;
+      case 'parenting':
+        await ParentingPage.render(content, params);
+        break;
+      case 'milestone':
+        await MilestonePage.render(content);
+        break;
+      case 'report':
+        await ReportPage.render(content);
+        break;
+      case 'profile':
+        await ProfilePage.render(content);
+        break;
+      case 'screening':
+        await ScreeningPage.render(content);
+        break;
+      case 'growth-curve':
+        await GrowthCurvePage.render(content);
+        break;
+      case 'sleep-management':
+        await SleepTrainingPage.render(content);
+        break;
+      case 'language-development':
+        await LanguageDevelopmentPage.render(content);
+        break;
+      case 'social-development':
+        await SocialDevelopmentPage.render(content);
+        break;
+      case 'safety':
+        await SafetyPage.render(content);
+        break;
+      case 'food':
+        await FoodPage.render(content);
+        break;
+      case 'medical':
+        await MedicalPage.render(content);
+        break;
+      case 'footprint':
+        await FootprintPage.render(content);
+        break;
+      case 'exercise':
+      case 'exercise-development':
+        await ExercisePage.render(content);
+        break;
+      case 'early-education':
+        await EarlyEduPage.render(content);
+        break;
+      case 'parenting-lib':
+        await ParentingLibPage.render(content);
+        break;
+      case 'onboarding':
+        this._renderOnboarding(content);
+        break;
+      case 'feeding-success':
+        this._renderSuccess(content, 'bottle', '喂养记录已保存', params);
+        break;
+      case 'stool-success':
+        this._renderSuccess(content, 'check', '排便记录已保存', params);
+        break;
+      default:
+        content.innerHTML = `<div class="empty-state"><p>页面不存在: ${page}</p></div>`;
+    }
+
+    // 滚动到顶部
+    content.scrollTop = 0;
+  },
+
+  _renderPlaceholder(content, icon, title, desc) {
+    content.innerHTML = `
+      <div class="empty-state" style="padding-top:80px">
+        <div class="empty-icon" style="font-size:64px">${icon}</div>
+        <h2 style="margin:16px 0 8px">${title}</h2>
+        <p class="text-muted">${desc}</p>
+        <p class="text-muted" style="font-size:12px;margin-top:8px">敬请期待 ${Lucide.icon('sparkles', 14)}</p>
+      </div>
+    `;
+  },
+
+  _renderMedicalPage(content) {
+    const baby = Utils.getBabyInfo();
+    if (!baby || !baby.birthDate) {
+      content.innerHTML = '<div class="empty-state"><div class="empty-icon">' + Lucide.icon('syringe', 32) + '</div><p>请先创建宝宝档案</p></div>';
+      return;
+    }
+    const vaccines = Utils.getBabyVaccines(baby.birthDate) || [];
+    const monthAge = Utils.calcMonthAge(baby.birthDate);
+    content.innerHTML = `
+      <div class="card">
+        <div class="card-title">${Lucide.icon('syringe', 18)} 疫苗日程</div>
+        <p class="text-muted" style="font-size:12px;margin-bottom:10px">根据宝宝月龄(${monthAge}个月)推荐</p>
+        ${vaccines.length > 0 ? vaccines.map(v => `
+          <div class="record-item">
+            <div class="record-main">
+              <div class="record-title">${Utils.escapeHtml(v.name || v.vaccine || '疫苗')}</div>
+              <div class="record-meta">${Utils.escapeHtml(v.age || v.monthRange || '')} ${Utils.escapeHtml(v.dose || '')} ${v.note ? '· ' + Utils.escapeHtml(v.note) : ''}</div>
+            </div>
+          </div>
+        `).join('') : '<p class="text-muted">暂无推荐疫苗</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">${Lucide.icon('pill', 18)} 用药记录</div>
+        <p class="text-muted text-center" style="padding:20px 0">用药记录功能即将上线</p>
+      </div>
+      <div class="disclaimer">${APP_CONFIG.disclaimer}</div>
+    `;
+  },
+
+  _renderOnboarding(content) {
+    // 已改为登录页，此方法保留兼容
+    this._renderLoginPage(content);
+  },
+
+  _renderLoginPage(content) {
+    const savedBaby = Utils.getBabyInfo();
+    const todayMood = Utils.getTodayMood();
+    const savedFamilyId = Auth.getSavedFamilyId();
+
+    // 宝宝信息摘要
+    let babyPreviewHTML = '';
+    if (savedBaby && savedBaby._id) {
+      const monthAge = Utils.calcMonthAgeToDays(savedBaby.birthDate);
+      babyPreviewHTML = `
+        <div class="welcome-baby-card">
+          ${Utils.avatarVideoHTML(56)}
+          <div class="welcome-baby-name">${Utils.escapeHtml(savedBaby.name || '宝宝')}</div>
+          <div class="welcome-baby-age">${monthAge.months > 0 ? monthAge.months + '个月' + monthAge.days + '天' : monthAge.days + '天'}</div>
+          ${todayMood ? `<div class="welcome-baby-mood">${Lucide.icon('smile', 16)} ${Utils.escapeHtml(todayMood.label || '')}</div>` : ''}
+        </div>
+      `;
+    }
+
+    content.innerHTML = `
+      <div class="login-page">
+        <div class="login-header">
+          <div class="login-logo">
+            ${Utils.avatarVideoHTML(72)}
+          </div>
+          <h1>OneOne成长日记</h1>
+          <p class="login-subtitle">全家一起记录宝宝成长每一天</p>
+        </div>
+
+        ${babyPreviewHTML}
+
+        <div class="card" style="text-align:left">
+          <div class="form-group">
+            <label>您的昵称</label>
+            <input type="text" id="login-nickname" class="form-input" placeholder="如：妈妈/爸爸/奶奶" value="${savedBaby ? '妈妈' : ''}">
+          </div>
+          <div class="form-group">
+            <label>家庭编号</label>
+            <input type="text" id="login-familyId" class="form-input" placeholder="创建家庭后获得" value="${savedFamilyId || ''}">
+          </div>
+          <div class="form-group">
+            <label>邀请码（6位）</label>
+            <input type="text" id="login-inviteCode" class="form-input" placeholder="输入6位邀请码" maxlength="6" autocapitalize="characters">
+          </div>
+          <div class="form-group">
+            <label>账号锁定码（8位字母数字）</label>
+            <input type="text" id="login-lockCode" class="form-input" placeholder="创建家庭时生成的8位锁定码" maxlength="8" autocapitalize="characters">
+          </div>
+          <button class="btn btn-primary btn-block" onclick="App._submitLogin()" id="btn-login-submit">登录</button>
+
+          <div class="login-divider">
+            <span>或者</span>
+          </div>
+          <button class="btn btn-success btn-block" onclick="App._goCreateFamily()">创建新家庭</button>
+        </div>
+
+        <div class="login-footer">
+          <p style="font-size:12px;color:var(--text-secondary)">首次使用？点击「创建新家庭」开始记录宝宝成长</p>
+          <p style="font-size:11px;color:var(--text-light);margin-top:8px">可靠云端存储 · 家庭成员共享 · 隐私安全</p>
+        </div>
+      </div>
+    `;
+  },
+
+  _renderSuccess(content, icon, msg, data) {
+    // P3 修复：icon 为 Lucide 图标名（'bottle'/'check'），原先直接 ${icon} 会把英文单词渲染成文字
+    content.innerHTML = `
+      <div class="success-page">
+        <div class="success-icon" style="font-size:64px;line-height:1">${Lucide.icon(icon, 56)}</div>
+        <h2 style="margin-bottom:8px">${msg}</h2>
+        <p class="feedback-text">数据已同步到云端，全家可见</p>
+        <button class="btn btn-primary" onclick="showPage('dashboard')">返回首页</button>
+        <button class="btn btn-secondary mt-8" onclick="showPage('quick-record')">继续记录</button>
+      </div>
+    `;
+  }
+};
