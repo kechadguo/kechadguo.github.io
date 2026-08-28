@@ -2,8 +2,8 @@
  * 配置模块
  */
 window.APP_CONFIG = {
-  envId: window.STAGING_RUNTIME_CONFIG?.envId || '',
-  apiBaseUrl: window.STAGING_RUNTIME_CONFIG?.apiBaseUrl || window.location.origin,
+  envId: window.PRODUCTION_RUNTIME_CONFIG?.envId || '',
+  apiBaseUrl: window.PRODUCTION_RUNTIME_CONFIG?.apiBaseUrl || window.location.origin,
 
   functions: {
     auth: 'auth', family: 'family', baby: 'baby',

@@ -2,8 +2,8 @@
  * OneOne成长日记 — Service Worker
  * 策略：Cache First（静态资源）+ Network First（API 数据）
  */
-const CACHE_NAME = 'oneone-production-r21';
-const STATIC_ASSETS = ['./','./index.html','./manifest.json','./css/v3-runtime.css','./js/theme-v3.js','./js/config.js','./js/STAGING-RUNTIME-CONFIG.template.js','./js/data/vaccine-schedule.js','./js/data/growth-standard.js','./js/data/region-data.js','./js/data/milestone-standard.js','./js/data/badges-data.js','./js/data/nursing-standard.js','./js/data/exercise-plan.js','./js/data/food-plan.js','./js/data/knowledge-parenting.js','./js/data/early-edu-courses.js','./js/utils.js','./js/auth.js','./js/api.js','./js/breast-feeding.js','./js/feeding-time-chart.js','./js/voice.js','./js/pages.js','./js/app.js'];
+const CACHE_NAME = 'oneone-production-r22';
+const STATIC_ASSETS = ['./','./index.html','./manifest.json','./css/v3-runtime.css','./js/theme-v3.js','./js/config.js','./js/production-runtime-config.js','./js/data/vaccine-schedule.js','./js/data/growth-standard.js','./js/data/region-data.js','./js/data/milestone-standard.js','./js/data/badges-data.js','./js/data/nursing-standard.js','./js/data/exercise-plan.js','./js/data/food-plan.js','./js/data/knowledge-parenting.js','./js/data/early-edu-courses.js','./js/utils.js','./js/auth.js','./js/api.js','./js/breast-feeding.js','./js/feeding-time-chart.js','./js/voice.js','./js/pages.js','./js/app.js'];
 
 // ===== 安装：预缓存核心静态资源 =====
 self.addEventListener('install', (event) => {
@@ -20,7 +20,7 @@ self.addEventListener('install', (event) => {
 
 // ===== 激活：清理旧缓存 + 通知客户端（页面侧决定是否自动刷新） =====
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating V3 real full...');
+  console.log('[SW] Activating production R22...');
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
