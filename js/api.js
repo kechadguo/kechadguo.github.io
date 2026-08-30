@@ -42,6 +42,13 @@ window.API = {
       if (timer) clearTimeout(timer);
     }
     // 区分 HTTP 状态码
+    if (res.status === 404) {
+      const err = new Error('服务暂未部署');
+      err.isFunctionNotFound = true;
+      err.httpStatus = 404;
+      err.code = 'FUNCTION_NOT_FOUND';
+      throw err;
+    }
     if (res.status === 409) {
       const conflict = new Error('数据版本冲突，请人工合并');
       conflict.isConflict = true;
@@ -59,6 +66,7 @@ window.API = {
     const result = await res.json();
     if (result.code !== 0) {
       const err = new Error(result.msg || '请求失败');
+      if (result.code === 404 || result.errorCode === 'FUNCTION_NOT_FOUND') { err.isFunctionNotFound = true; err.httpStatus = 404; err.code = 'FUNCTION_NOT_FOUND'; }
       // CloudBase 业务错误码：4008=未授权 4009=token过期（禁止引用未定义的 common 变量）
       if (result.code === 409 || result.code === 'CONFLICT' || result.errorCode === 'CONFLICT') {
         err.isConflict = true;

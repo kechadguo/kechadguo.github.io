@@ -242,15 +242,14 @@ a, button, [role="button"], input, select, textarea, label {
 .category-soft-6 { background: color-mix(in srgb, var(--color-category-6) 14%, transparent); }
 
 .v3-page-status {
-  position: fixed;
-  top: var(--space-safe-top);
-  left: 50%;
-  z-index: var(--z-toast);
-  transform: translateX(-50%);
+  position: relative;
+  width: 100%;
   min-height: 24px;
-  padding: 4px 10px;
+  padding: 4px 16px;
   color: var(--color-text-secondary);
   font-size: var(--font-size-caption);
+  line-height: var(--line-height-base);
+  text-align: center;
   pointer-events: none;
 }
 .v3-page-status[hidden] { display: none; }

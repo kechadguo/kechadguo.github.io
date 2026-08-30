@@ -1,10 +1,10 @@
 /**
  * OneOne成长日记 — Service Worker
- * 策略：Cache First（静态资源）+ Network First（API 数据）
+ * 策略：版本化静态资源精确缓存 + Network First（HTML）+ API 绕过
  */
 // 正式构建规则：任何静态资源变更都必须生成新的唯一 CACHE_NAME，禁止复用旧版本名称。
-const CACHE_NAME = 'oneone-production-r23-release-a2d32cfb5843';
-const STATIC_ASSETS = ['./','./index.html','./manifest.json','./css/v3-runtime.css','./js/theme-v3.js','./js/config.js','./js/production-runtime-config.js','./js/v3-contract.js','./js/message-queue.js','./js/data/vaccine-schedule.js','./js/data/growth-standard.js','./js/data/region-data.js','./js/data/milestone-standard.js?v=release-a2d32cfb5843','./js/data/badges-data.js?v=release-a2d32cfb5843','./js/data/nursing-standard.js','./js/data/exercise-plan.js','./js/data/food-plan.js','./js/data/knowledge-parenting.js','./js/data/early-edu-courses.js','./js/utils.js','./js/auth.js','./js/api.js','./js/breast-feeding.js','./js/feeding-time-chart.js','./js/voice.js','./js/pages/dashboard.js','./js/pages/quick-record.js','./js/pages/analytics-page.js','./js/pages/modules-page.js','./js/pages/parenting.js','./js/pages/milestone-page.js?v=release-a2d32cfb5843','./js/pages/report-page.js','./js/pages/growth-curve.js','./js/pages/sleep-management.js','./js/pages/medical.js','./js/pages/footprint.js','./js/pages/exercise.js','./js/pages/food.js','./js/pages/early-edu.js','./js/pages/language-development.js','./js/pages/social-development.js','./js/pages/safety.js','./js/pages/parenting-lib.js','./js/focus-guide.js','./js/pages/profile-page.js','./js/pages/screening.js','./js/pages.js','./js/pages/message-center-page.js','./js/app.js'];
+const CACHE_NAME = 'oneone-production-r23-hotfix-release-c82b846b6977';
+const STATIC_ASSETS = ['./','./manifest.json','./css/v3-runtime.css?v=r23-hotfix','./js/theme-v3.js?v=r23-hotfix','./js/config.js?v=r23-hotfix','./js/production-runtime-config.js?v=r23-hotfix','./js/v3-contract.js?v=r23-hotfix','./js/message-queue.js?v=r23-hotfix','./js/data/vaccine-schedule.js?v=r23-hotfix','./js/data/growth-standard.js?v=r23-hotfix','./js/data/region-data.js?v=r23-hotfix','./js/data/milestone-standard.js?v=r23-hotfix','./js/data/badges-data.js?v=r23-hotfix','./js/data/nursing-standard.js?v=r23-hotfix','./js/data/exercise-plan.js?v=r23-hotfix','./js/data/food-plan.js?v=r23-hotfix','./js/data/knowledge-parenting.js?v=r23-hotfix','./js/data/early-edu-courses.js?v=r23-hotfix','./js/utils.js?v=r23-hotfix','./js/auth.js?v=r23-hotfix','./js/api.js?v=r23-hotfix','./js/breast-feeding.js?v=r23-hotfix','./js/feeding-time-chart.js?v=r23-hotfix','./js/voice.js?v=r23-hotfix','./js/pages/dashboard.js?v=r23-hotfix','./js/pages/quick-record.js?v=r23-hotfix','./js/pages/analytics-page.js?v=r23-hotfix','./js/pages/modules-page.js?v=r23-hotfix','./js/pages/parenting.js?v=r23-hotfix','./js/pages/milestone-page.js?v=r23-hotfix','./js/pages/report-page.js?v=r23-hotfix','./js/pages/growth-curve.js?v=r23-hotfix','./js/pages/sleep-management.js?v=r23-hotfix','./js/pages/medical.js?v=r23-hotfix','./js/pages/footprint.js?v=r23-hotfix','./js/pages/exercise.js?v=r23-hotfix','./js/pages/food.js?v=r23-hotfix','./js/pages/early-edu.js?v=r23-hotfix','./js/pages/language-development.js?v=r23-hotfix','./js/pages/social-development.js?v=r23-hotfix','./js/pages/safety.js?v=r23-hotfix','./js/pages/parenting-lib.js?v=r23-hotfix','./js/focus-guide.js?v=r23-hotfix','./js/pages/profile-page.js?v=r23-hotfix','./js/pages/screening.js?v=r23-hotfix','./js/pages.js?v=r23-hotfix','./js/pages/message-center-page.js?v=r23-hotfix','./js/app.js?v=r23-hotfix'];
 
 // ===== 安装：预缓存核心静态资源 =====
 self.addEventListener('install', (event) => {
@@ -57,6 +57,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(new Request(request, { cache: 'no-cache' })));
     return;
   }
-  if (url.pathname.startsWith('/auth') || url.pathname.startsWith('/feeding') || url.pathname.startsWith('/stool') || url.pathname.startsWith('/sleep') || url.pathname.startsWith('/health') || url.pathname.startsWith('/family') || url.pathname.startsWith('/baby') || url.pathname.startsWith('/api/')) return;
-  event.respondWith(caches.match(request, { ignoreSearch: true }).then(cached => cached || fetch(request)));
+  if (url.pathname.startsWith('/auth') || url.pathname.startsWith('/feeding') || url.pathname.startsWith('/stool') || url.pathname.startsWith('/sleep') || url.pathname.startsWith('/health') || url.pathname.startsWith('/family') || url.pathname.startsWith('/baby') || url.pathname.startsWith('/api/') || request.headers.has('Authorization')) return;
+  if (url.pathname === '/' || url.pathname.endsWith('/index.html')) {
+    event.respondWith(fetch(new Request(request, { cache: 'no-cache' })).catch(() => caches.match(request)));
+    return;
+  }
+  event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
 });
