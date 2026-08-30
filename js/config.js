@@ -13,7 +13,7 @@ window.APP_CONFIG = {
     inviteCode: 'invite-code', report: 'report', export: 'export',
     clean: 'cloudfunctions/clean', footprint: 'footprint', vaccine: 'vaccine',
     healthManagement: 'health-management', screening: 'screening', medication: 'vaccine', allergy: 'allergy', earlyEdu: 'early-edu', languageDevelopment: 'language-development', socialDevelopment: 'social-development', safety: 'safety',
-    auditLog: 'audit-log', insurance: 'insurance'
+    auditLog: 'audit-log', insurance: 'insurance', messageCenter: 'message-center'
   },
 
   // 喂养类型（不含辅食，辅食移至功能模块）

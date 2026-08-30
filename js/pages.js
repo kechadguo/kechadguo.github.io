@@ -1,6 +1,72 @@
 /**
  * 页面路由 — 委派到各页面模块（4-tab 导航 + 子页面）
  */
+window.V3UI = window.V3UI || {
+  _requestStats: null,
+  _trackedCall: null,
+  beginRequestTracking() {
+    if (this._trackedCall || !window.API?.call) { this._requestStats = { total: 0, successes: 0, failed: 0, lastError: null }; return; }
+    const original = window.API.call;
+    const stats = { total: 0, successes: 0, failed: 0, lastError: null };
+    const tracked = async function(...args) {
+      stats.total += 1;
+      try { const result = await original.apply(this, args); stats.successes += 1; return result; }
+      catch (error) { stats.failed += 1; stats.lastError = error; throw error; }
+    };
+    this._trackedCall = { original, tracked };
+    this._requestStats = stats;
+    window.API.call = tracked;
+  },
+  endRequestTracking() {
+    const stats = this._requestStats || { total: 0, successes: 0, failed: 0, lastError: null };
+    if (this._trackedCall && window.API?.call === this._trackedCall.tracked) window.API.call = this._trackedCall.original;
+    this._trackedCall = null;
+    this._requestStats = null;
+    return stats;
+  },
+  applyRequestState(content, stats) {
+    if (!content || !stats) return;
+    const explicitPartial = content.dataset.v3RequestState === 'partial' || content.querySelector('[data-v3-state="partial"]') || document.getElementById('page-status')?.classList.contains('is-partial');
+    if (explicitPartial) {
+      this.setStatus('partial', '部分内容加载失败');
+      return;
+    }
+    if (!stats.failed) {
+      if (content.querySelector('[data-v3-state="empty"], .empty-state, .empty-state-sm, .v2-empty-mini, .empty-mini, .cs-empty, .checkup-empty, .med-sum-empty, .insurance-empty, .footprint-map-empty, [data-empty="true"]')) this.setStatus('empty', '暂无数据');
+      else this.setStatus('loaded');
+      return;
+    }
+    const state = this.errorState(stats.lastError);
+    if (stats.successes > 0) {
+      if (!content.querySelector('[data-v3-state="partial"]')) content.insertAdjacentHTML('afterbegin', this.stateHTML('partial', '部分内容加载失败', '已成功内容仍保留，可重试失败区域。', '<button class="btn btn-primary" type="button" onclick="Pages.render(Pages.currentTab)">重新加载</button>'));
+      this.setStatus('partial', '部分内容加载失败');
+      return;
+    }
+    if (!content.querySelector('[data-v3-state]')) content.innerHTML = this.stateHTML(state, state === 'offline' ? '当前离线' : state === 'permission-denied' ? '暂无访问权限' : state === 'auth-required' ? '请先登录' : state === 'conflict' ? '数据发生冲突' : '页面加载失败', '请稍后重试', '<button class="btn btn-primary" type="button" onclick="Pages.render(Pages.currentTab)">重新加载</button>');
+    this.setStatus(state, state === 'offline' ? '当前离线' : '页面加载失败');
+  },
+  setStatus(state, message = '') {
+    const content = document.getElementById('content');
+    const status = document.getElementById('page-status');
+    if (content) content.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+    if (!status) return;
+    status.className = `v3-page-status is-${state}`;
+    status.textContent = message;
+    status.hidden = !message;
+  },
+  stateHTML(state, title, desc = '', action = '') {
+    const icon = ['error', 'permission-denied', 'auth-required', 'conflict'].includes(state) ? (state === 'auth-required' ? 'log-in' : (state === 'conflict' ? 'git-merge' : (state === 'permission-denied' ? 'lock' : 'alert-circle'))) : (state === 'empty' ? 'inbox' : (state === 'offline' ? 'wifi-off' : (state === 'success' ? 'check-circle' : (state === 'partial' ? 'triangle-alert' : 'loader-circle'))));
+    const role = ['error', 'permission-denied', 'auth-required', 'conflict', 'partial'].includes(state) ? 'alert' : 'status';
+    return `<section class="v3-state v3-state-${state}" data-v3-state="${state}" role="${role}"><div class="v3-state-icon" aria-hidden="true">${window.Lucide?.icon ? Lucide.icon(icon, 28) : ''}</div><h2>${Utils.escapeHtml(title)}</h2>${desc ? `<p>${Utils.escapeHtml(desc)}</p>` : ''}${action}</section>`;
+  },
+  errorState(error) {
+    if (error?.isPermissionError || error?.httpStatus === 403 || error?.code === 4003) return 'permission-denied';
+    if (error?.isAuthError || error?.code === 4008 || error?.code === 4009) return 'auth-required';
+    if (error?.isConflict || error?.code === 'CONFLICT' || error?.httpStatus === 409) return 'conflict';
+    const code = Number(error?.code || error?.status || error?.response?.code);
+    return code === 4003 || code === 403 ? 'permission-denied' : (error?.isNetworkError ? 'offline' : 'error');
+  }
+};
 window.Pages = {
   currentTab: 'dashboard',
   history: [],
@@ -10,6 +76,9 @@ window.Pages = {
     const content = document.getElementById('content');
     const backBtn = document.getElementById('btn-back');
     const titleEl = document.getElementById('page-title');
+    if (!content || !backBtn || !titleEl) return;
+    V3UI.setStatus('loading', '页面加载中');
+    V3UI.beginRequestTracking();
 
     // R10 K4：v2 通道切换页面先出骨架屏（页面 render 内部用真实内容覆盖；
     // 同步页 <300ms 覆盖不闪烁；异步页数据到达前显示呼吸块 → CLS 友好）
@@ -40,7 +109,7 @@ window.Pages = {
       safety: { title: '安全与急救', showBack: true },
       food: { title: '辅食', showBack: true },
       medical: { title: '健康管理', showBack: true },
-      footprint: { title: '足迹', showBack: true },
+      'footprint': { title: '足迹', showBack: true },
       exercise: { title: '运动发展', showBack: true },
       'exercise-development': { title: '运动发展', showBack: true },
       'early-education': { title: '早期教育', showBack: true },
@@ -63,6 +132,7 @@ window.Pages = {
     }
 
     // 委派渲染；完整页面脚本由构建入口预加载，保持真实 handler 不变
+    try {
     switch (page) {
       case 'dashboard':
         await DashboardPage.render(content);
@@ -84,7 +154,7 @@ window.Pages = {
         content.innerHTML = `<div class="card"><div class="card-title">${Lucide.icon('bot', 20)} AI助手</div><div class="ai-disabled-label" role="status">AI功能暂未启用</div><p class="text-muted" style="margin-top:10px">当前版本仅提供确定性知识入口，不连接模型或外部服务。</p><button class="btn btn-outline btn-block" style="margin-top:14px" onclick="showPage('parenting-lib')">${Lucide.icon('book-open', 18)} 浏览育儿百科</button></div>`;
         break;
       case 'messages':
-        content.innerHTML = `<div class="card"><div class="card-title">${Lucide.icon('inbox', 20)} 消息中心</div><p class="text-muted">暂无消息</p></div>`;
+        await MessageCenterPage.render(content);
         break;
       case 'parenting':
         await ParentingPage.render(content, params);
@@ -145,10 +215,21 @@ window.Pages = {
         this._renderSuccess(content, 'check', '排便记录已保存', params);
         break;
       default:
-        content.innerHTML = `<div class="empty-state"><p>页面不存在: ${page}</p></div>`;
+        content.innerHTML = V3UI.stateHTML('empty', '页面不存在', '请返回上一页继续操作');
+    }
+    } catch (error) {
+      const state = V3UI.errorState(error);
+      const retry = `<button class="btn btn-primary" type="button" onclick="showPage('${Utils.jsAttr(page)}')">重新加载</button>`;
+      const title = state === 'permission-denied' ? '暂无访问权限' : (state === 'auth-required' ? '请先登录' : (state === 'conflict' ? '数据发生冲突' : (state === 'offline' ? '当前离线' : '页面加载失败')));
+      const desc = state === 'permission-denied' ? '请切换到有权限的家庭或联系管理员' : (state === 'auth-required' ? '登录后才能查看此页面' : (state === 'conflict' ? '请刷新后重试' : (state === 'offline' ? '联网后可同步数据' : '请稍后重试')));
+      content.innerHTML = V3UI.stateHTML(state, title, desc, retry);
+      V3UI.endRequestTracking();
+      V3UI.setStatus(state, title);
+      return;
     }
 
-    // 滚动到顶部
+    // 页面模块自行处理业务数据和空态；路由只负责统一壳层状态。
+    V3UI.applyRequestState(content, V3UI.endRequestTracking());
     content.scrollTop = 0;
   },
 

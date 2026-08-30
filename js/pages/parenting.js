@@ -13,10 +13,10 @@ window.ParentingPage = {
   async render(container, subTab) {
     if (subTab) this.currentSub = subTab;
     const tabs = [
-      { key: 'feeding', label: '喂养' },
-      { key: 'urination', label: '排便' },
-      { key: 'clean', label: '清洁' },
-      { key: 'health', label: '健康' }
+      { key: 'feeding', label: '喂养记录' },
+      { key: 'urination', label: '排便记录' },
+      { key: 'clean', label: '清洁护理' },
+      { key: 'health', label: '日常健康' }
     ];
 
     container.innerHTML = `
@@ -36,7 +36,7 @@ window.ParentingPage = {
   },
 
   _tabLabel(key) {
-    return { feeding: '喂养', urination: '排便', clean: '清洁', health: '健康' }[key];
+    return { feeding: '喂养记录', urination: '排便记录', clean: '清洁护理', health: '日常健康' }[key];
   },
 
   // ===== 记录删除（云端删除，多端自动拉齐） =====
@@ -67,54 +67,43 @@ window.ParentingPage = {
     </div>`;
   },
 
-  // ===== 近7天滚动统计 =====
-  /** 拉取近7天记录并按天聚合（list API 已支持日期范围） */
   async _fetch7Days(kind) {
-    // fix v95：bind(API) 修复 detached 调用 this 丢失导致近7天柱状图恒为 0 的 bug
-    const listFn = { feeding: API.listFeeding.bind(API), stool: API.listStool.bind(API), clean: API.listClean.bind(API), sleep: API.listSleep.bind(API) }[kind];
-    if (!listFn) return null;
     const end = Utils.todayStr();
     const start = Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD');
-    const data = await listFn({ startDate: start, endDate: end, pageSize: 500 }).catch(() => null);
-    const records = data?.records || [];
-
+    const snapshot = await API.getUnifiedSnapshot({ startDate: start, endDate: end });
+    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    const records = snapshot.records?.[kind] || [];
     const dayMap = {};
     for (let i = 0; i < 7; i++) {
       const d = new Date(Date.now() - (6 - i) * 86400000);
       const key = Utils.formatDate(d, 'YYYY-MM-DD');
       dayMap[key] = { date: key, label: Utils.formatDate(d, 'MM-DD'), count: 0, ml: 0, breast: 0, urine: 0, stool: 0, diaper: 0, clean: 0, bath: 0, shampoo: 0, washFace: 0, nail: 0, sleepMin: 0 };
     }
-    for (const r of records) {
-      const t = r.time || r.startTime;
-      if (!t) continue;
-      const key = Utils.formatDate(new Date(t), 'YYYY-MM-DD');
+    for (const record of records) {
+      const key = Utils.localDateFromISO(record.time || record.occurredAt || record.startTime || record.date);
       const day = dayMap[key];
       if (!day) continue;
       day.count++;
-      if (r.type === 'breast') day.breast++;
-      if (r.unit === 'ml' && r.amount) day.ml += r.amount;
-      const type = r.type || 'stool';
-      if (type === 'urine') day.urine++;
-      else if (type === 'diaper') day.diaper++;
-      else if (type === 'stool') day.stool++;
-      if (['bath','shampoo','nail_trim','massage','visual_training','hearing_training','exercise','skin_care','other'].includes(type)) day.clean++;
-      if (type === 'bath') day.bath++;
-      if (type === 'shampoo') day.shampoo++;
-      if (type === 'wash_face') day.washFace++;
-      if (type === 'nail_trim') day.nail++;
-      if (r.duration) day.sleepMin += r.duration;
+      if (kind === 'feeding') {
+        day.ml += Number(record.consumedMl || record.outputMl || record.amount || 0);
+        if (record.feedingSubtype === 'breast_direct' || record.type === 'breast') day.breast++;
+      }
+      if (kind === 'stool') {
+        const type = record.type || 'stool';
+        if (type === 'urine') day.urine++; else if (type === 'diaper') day.diaper++; else day.stool++;
+      }
+      if (kind === 'clean') {
+        day.clean++;
+        if (record.type === 'bath') day.bath++;
+        if (record.type === 'shampoo') day.shampoo++;
+        if (record.type === 'wash_face') day.washFace++;
+        if (record.type === 'nail_trim') day.nail++;
+      }
+      if (kind === 'sleep') day.sleepMin += Number(record.duration || 0);
     }
     const days = Object.values(dayMap);
-    const sum = (k) => days.reduce((s, d) => s + d[k], 0);
-    return {
-      days,
-      totals: {
-        count: sum('count'), ml: sum('ml'), breast: sum('breast'),
-        urine: sum('urine'), stool: sum('stool'), diaper: sum('diaper'),
-        clean: sum('clean'), bath: sum('bath'), shampoo: sum('shampoo'),
-        washFace: sum('washFace'), nail: sum('nail'), sleepMin: sum('sleepMin')
-      }
-    };
+    const sum = key => days.reduce((total, day) => total + day[key], 0);
+    return { days, totals: { count: sum('count'), ml: sum('ml'), breast: sum('breast'), urine: sum('urine'), stool: sum('stool'), diaper: sum('diaper'), clean: sum('clean'), bath: sum('bath'), shampoo: sum('shampoo'), washFace: sum('washFace'), nail: sum('nail'), sleepMin: sum('sleepMin') } };
   },
 
   /** 近7天统计卡片（汇总数字 + 每日迷你柱状图） */
@@ -195,11 +184,13 @@ window.ParentingPage = {
     const baby = Utils.getBabyInfo();
     const endDate = Utils.todayStr();
     const startDate = Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD');
-    const [summary, week, feedingRange] = await Promise.all([
-      API.feedingTodaySummary().catch(() => null),
-      this._fetch7Days('feeding'),
-      API.listFeeding({ startDate, endDate, page: 1, pageSize: 500 }).catch(() => ({ records: [] }))
-    ]);
+    const snapshot = await API.getUnifiedSnapshot({ startDate, endDate });
+    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    const feedRecords = snapshot.records?.feeding || [];
+    const todayRecords = feedRecords.filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === endDate);
+    const summary = { records: todayRecords, totalML: todayRecords.reduce((sum, record) => sum + Number(record.consumedMl || record.outputMl || record.amount || 0), 0), totalCount: todayRecords.length };
+    const week = await this._fetch7Days('feeding');
+    const feedingRange = { records: feedRecords };
 
     const todayMilk = Number(summary?.totalML || 0);
     const feedCount = Number(summary?.totalCount || 0);
@@ -328,7 +319,7 @@ window.ParentingPage = {
     const chartMount = el.querySelector('#feeding-time-chart');
     if (chartMount && window.FeedingTimeChart) {
       this._feedingChart = new FeedingTimeChart(chartMount, {
-        loadWeek: async (weekStart, weekEnd) => API.listFeeding({ startDate: weekStart, endDate: weekEnd, page: 1, pageSize: 500 }),
+        loadWeek: async () => ({ records: feedingRange.records || [] }),
         weekStart: startDate,
         feedings: feedingRange.records || [],
         showWeekNavigation: false,
@@ -353,13 +344,12 @@ window.ParentingPage = {
   // ===== 排便 =====
   async _renderUrination(el) {
     const baby = Utils.getBabyInfo();
-    const [summary, week] = await Promise.all([
-      API.stoolTodaySummary().catch(() => null),
-      this._fetch7Days('stool')
-    ]);
-    const records = summary?.records || [];
+    const snapshot = await API.getUnifiedSnapshot({ startDate: Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD'), endDate: Utils.todayStr() });
+    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    const records = (snapshot.records?.stool || []).filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === Utils.todayStr());
+    const summary = { records };
 
-    const stoolCount = records.filter(r => !r.type || r.type === 'stool').length;
+    const week = await this._fetch7Days('stool');
     const urineCount = records.filter(r => r.type === 'urine').length;
     const diaperCount = records.filter(r => r.type === 'diaper').length;
 
@@ -438,13 +428,12 @@ window.ParentingPage = {
 
   // ===== 清洁与每日护理 =====
   async _renderClean(el) {
-    const [summary, week] = await Promise.all([
-      API.cleanTodaySummary().catch(() => null),
-      this._fetch7Days('clean')
-    ]);
-    const records = (summary?.records || []).sort((a, b) => new Date(b.time) - new Date(a.time));
+    const snapshot = await API.getUnifiedSnapshot({ startDate: Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD'), endDate: Utils.todayStr() });
+    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    const records = (snapshot.records?.clean || []).filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === Utils.todayStr()).sort((a, b) => new Date(b.time || b.occurredAt) - new Date(a.time || a.occurredAt));
+    const summary = { records, bath: records.filter(r => r.type === 'bath').length, shampoo: records.filter(r => r.type === 'shampoo').length, washFace: records.filter(r => r.type === 'wash_face').length, nailTrim: records.filter(r => r.type === 'nail_trim').length };
 
-    // 纯清洁活动（含洗脸、剪指甲）
+    const week = await this._fetch7Days('clean');
     const cleanRecords = records.filter(r => ['bath', 'shampoo', 'wash_face', 'nail_trim'].includes(r.type));
     // 每日护理活动（归于护理标准，仅作展示引用）
     const careRecords = records.filter(r => ['massage', 'visual_training', 'hearing_training', 'exercise', 'skin_care'].includes(r.type));
@@ -743,11 +732,11 @@ window.ParentingPage = {
   // ===== 睡眠 =====
   async _renderSleep(el) {
     const activeSleep = Utils.getActiveSleepSession();
-    const [summary, week] = await Promise.all([
-      API.sleepTodaySummary().catch(() => null),
-      this._fetch7Days('sleep')
-    ]);
-    const records = summary?.records || [];
+    const snapshot = await API.getUnifiedSnapshot({ startDate: Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD'), endDate: Utils.todayStr() });
+    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    const records = (snapshot.records?.sleep || []).filter(record => Utils.localDateFromISO(record.startTime || record.occurredAt || record.time) === Utils.todayStr());
+    const summary = { records, totalMinutes: records.reduce((sum, record) => sum + Number(record.duration || 0), 0), sessions: records.length, longest: records.reduce((max, record) => Math.max(max, Number(record.duration || 0)), 0) };
+    const week = await this._fetch7Days('sleep');
     this._sleepRecordMap = Object.fromEntries(records.map(r => [r._id, r]));
     const baby = Utils.getBabyInfo();
     const monthAge = (baby && baby.birthDate) ? Utils.calcMonthAge(baby.birthDate) : null;

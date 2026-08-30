@@ -151,17 +151,17 @@ window.ReportPage = {
       endDate = Utils.formatDate(now);
     }
 
-    const [feeding, stool, sleep, health, milestones, cleanData, todoList, moodData, vaccineData] = await Promise.all([
-      API.listFeeding({ startDate, endDate, page: 1, pageSize: 2000 }).catch(() => ({ records: [] })),
-      API.listStool({ startDate, endDate, page: 1, pageSize: 2000 }).catch(() => ({ records: [] })),
-      API.listSleep({ startDate, endDate, page: 1, pageSize: 2000 }).catch(() => ({ records: [] })),
-      API.healthTodaySummary().catch(() => null),
-      API.listMilestone().catch(() => ({ records: [] })),
-      API.listClean({ startDate, endDate, page: 1, pageSize: 2000 }).catch(() => ({ records: [] })),
-      API.listTodo({ startDate, endDate, page: 1, pageSize: 2000 }).catch(() => ({ records: [] })),
-      API.listMoods(startDate, endDate).catch(() => ({ records: [] })),
-      API.getVaccineData().catch(() => null)
-    ]);
+    const snapshot = await API.getUnifiedSnapshot({ startDate, endDate });
+    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    const feeding = { records: snapshot.records?.feeding || [] };
+    const stool = { records: snapshot.records?.stool || [] };
+    const sleep = { records: snapshot.records?.sleep || [] };
+    const health = null;
+    const milestones = { records: snapshot.records?.milestone || [] };
+    const cleanData = { records: snapshot.records?.clean || [] };
+    const todoList = { records: snapshot.records?.todo || [] };
+    const moodData = { records: snapshot.records?.mood || [] };
+    const vaccineData = null;
 
     const feedRecords = feeding?.records || [];
     const stoolRecords = stool?.records || [];
@@ -1688,19 +1688,11 @@ window.ReportPage = {
 
     Utils.showLoading();
     try {
-      const feeding = await API.listFeeding({ startDate: dateStr, endDate: dateStr, page: 1, pageSize: 50 }).catch(() => null);
-      const feedRecords = feeding?.records || [];
-      const stool = await API.listStool({ startDate: dateStr, endDate: dateStr, page: 1, pageSize: 50 }).catch(() => null);
-      const stoolRecords = stool?.records || [];
-      const sleep = await API.listSleep({ startDate: dateStr, endDate: dateStr, page: 1, pageSize: 50 }).catch(() => null);
-      const sleepRecords = sleep?.records || [];
-
-      // 加载该日期的待办
-      let dateTodos = [];
-      try {
-        const todos = await API.listTodo({ startDate: dateStr, endDate: dateStr, page: 1, pageSize: 100 }).catch(() => ({ records: [] }));
-        dateTodos = todos?.records || [];
-      } catch {};
+      const snapshot = await API.getUnifiedSnapshot({ startDate: dateStr, endDate: dateStr });
+      const feedRecords = (snapshot.records?.feeding || []).filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === dateStr);
+      const stoolRecords = (snapshot.records?.stool || []).filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === dateStr);
+      const sleepRecords = (snapshot.records?.sleep || []).filter(record => Utils.localDateFromISO(record.startTime || record.occurredAt) === dateStr);
+      const dateTodos = (snapshot.records?.todo || []).filter(record => record.date === dateStr);
 
       const totalMilk = feedRecords.reduce((s, r) => s + (r.amount || 0), 0);
       const urineCount = stoolRecords.filter(r => r.type === 'urine').length;

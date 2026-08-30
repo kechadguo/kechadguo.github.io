@@ -4,6 +4,8 @@
 window.App = {
   stoolPhotoFile: null,
   _aiRecognized: false,
+  _modalTrigger: null,
+  _modalKeydown: null,
 
   async init() {
     // 应用保存的主题和字号
@@ -20,6 +22,7 @@ window.App = {
       // v95 批次F：v2 通道页面内容 emoji → Lucide（装饰类；数据语义 emoji 无映射原样保留）
       this._installEmojiLucide();
     }
+    this._installModalA11y();
 
     this._scheduleMidnightSync();
     this._schedulePushChecker();
@@ -901,7 +904,7 @@ window.App = {
 
             // 导入喂养记录
             if (milk && parseInt(milk) > 0) {
-              await API.createFeeding({ type: 'formula', time: date + 'T10:00:00', amount: parseInt(milk), unit: 'ml', note: '导入数据', inputMethod: 'import' }).catch(() => {});
+              await API.createFeeding({ feedingSubtype: 'bottle', milkSource: 'formula', time: date + 'T10:00:00', offeredMl: parseInt(milk), consumedMl: parseInt(milk), note: '导入数据', inputMethod: 'BACKFILL' }).catch(() => {});
             }
             // 导入体温
             if (temp && parseFloat(temp) > 0) {
@@ -1412,11 +1415,10 @@ window.App = {
       const endDate = Utils.todayStr();
       const startDate = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-      const [feeding, stool, sleep] = await Promise.all([
-        API.listFeeding({ startDate, endDate, page: 1, pageSize: 500 }).catch(() => ({ records: [] })),
-        API.listStool({ startDate, endDate, page: 1, pageSize: 500 }).catch(() => ({ records: [] })),
-        API.listSleep({ startDate, endDate, page: 1, pageSize: 500 }).catch(() => ({ records: [] }))
-      ]);
+      const snapshot = await API.getUnifiedSnapshot({ startDate, endDate });
+      const feeding = { records: snapshot.records?.feeding || [] };
+      const stool = { records: snapshot.records?.stool || [] };
+      const sleep = { records: snapshot.records?.sleep || [] };
 
       // 按天汇总
       const dailyMap = {};
@@ -2072,7 +2074,7 @@ window.App = {
 
     Utils.showLoading('保存中...');
     try {
-      await API.createFeeding({ type: 'formula', time, amount, unit: 'ml', note, inputMethod: 'quick' });
+      await API.createFeeding({ feedingSubtype: 'bottle', milkSource: 'formula', time, offeredMl: amount, consumedMl: amount, note, inputMethod: 'quick' });
       Utils.setLastFeedInput('formula', { amount });
       Utils.hideLoading();
       this._closeModal();
@@ -2112,7 +2114,7 @@ window.App = {
 
     Utils.showLoading('保存中...');
     try {
-      await API.createFeeding({ type: 'bottle_breast', time, amount, unit: 'ml', note, inputMethod: 'quick' });
+      await API.createFeeding({ feedingSubtype: 'bottle', milkSource: 'breast_milk', time, offeredMl: amount, consumedMl: amount, note, inputMethod: 'quick' });
       Utils.setLastFeedInput('bottle_breast', { amount });
       Utils.hideLoading();
       this._closeModal();
@@ -2225,7 +2227,7 @@ window.App = {
 
     Utils.showLoading('保存中...');
     try {
-      await API.createFeeding({ type: 'solids', time, amount, unit: 'g', note, inputMethod: 'quick' });
+      await API.createFeeding({ feedingSubtype: 'solids', time, amount, unit: 'g', note, inputMethod: 'quick' });
       Utils.hideLoading();
       this._closeModal();
       Utils.showToast('已保存');
@@ -2282,16 +2284,89 @@ window.App = {
     return d.toISOString();
   },
 
+  _installModalA11y() {
+    if (this._modalA11yInstalled) return;
+    this._modalA11yInstalled = true;
+    this._modalOverlayStates = new WeakMap();
+    const triggerSelector = '[onclick*="_showModal"], [onclick*="open"], [onclick*="createIllness"], [onclick*="openAllergyForm"]';
+    const isNativeFocusable = node => /^(A|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(node.tagName);
+    const prepareTrigger = trigger => {
+      if (!trigger || trigger.dataset.r23TriggerA11y === 'true' || isNativeFocusable(trigger)) return;
+      trigger.dataset.r23TriggerA11y = 'true';
+      if (!trigger.hasAttribute('tabindex')) trigger.setAttribute('tabindex', '0');
+      if (!trigger.hasAttribute('role')) trigger.setAttribute('role', 'button');
+      trigger.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); trigger.click(); }
+      });
+    };
+    const focusablesIn = dialog => [...dialog.querySelectorAll('button,input,select,textarea,[href],[tabindex]:not([tabindex="-1"])')].filter(node => !node.disabled && node.offsetParent !== null);
+    const decorateOverlay = overlay => {
+      const dialog = overlay.querySelector('.modal-content');
+      if (!dialog || this._modalOverlayStates.has(overlay)) return;
+      dialog.dataset.r23A11y = 'true';
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      if (!dialog.getAttribute('aria-labelledby')) {
+        const heading = dialog.querySelector('h1,h2,h3,.modal-title');
+        if (heading) { heading.id ||= `modal-title-${Date.now()}`; dialog.setAttribute('aria-labelledby', heading.id); }
+      }
+      if (!dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
+      const previous = document.activeElement !== document.body ? document.activeElement : this._lastModalTrigger;
+      const restore = () => { if (previous && document.contains(previous)) setTimeout(() => previous.focus(), 0); };
+      const keydown = event => {
+        if (!document.body.contains(overlay)) { document.removeEventListener('keydown', keydown); return; }
+        if (event.key === 'Escape') { event.preventDefault(); overlay.remove(); restore(); return; }
+        if (event.key !== 'Tab') return;
+        const focusable = focusablesIn(dialog);
+        if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
+        if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable.at(-1).focus(); }
+        else if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0].focus(); }
+      };
+      this._modalOverlayStates.set(overlay, { keydown, restore });
+      document.addEventListener('keydown', keydown);
+      overlay.addEventListener('click', () => setTimeout(() => { if (!document.body.contains(overlay)) restore(); }, 0), true);
+      setTimeout(() => (focusablesIn(dialog)[0] || dialog).focus(), 0);
+    };
+    const prepareExisting = root => {
+      root.querySelectorAll?.(triggerSelector).forEach(prepareTrigger);
+      root.querySelectorAll?.('.modal-overlay').forEach(decorateOverlay);
+      if (root.matches?.(triggerSelector)) prepareTrigger(root);
+      if (root.matches?.('.modal-overlay')) decorateOverlay(root);
+    };
+    document.addEventListener('click', event => {
+      const trigger = event.target.closest?.(triggerSelector);
+      if (trigger) { prepareTrigger(trigger); this._lastModalTrigger = trigger; }
+      const overlay = event.target.closest?.('.modal-overlay');
+      if (overlay) decorateOverlay(overlay);
+    }, true);
+    const observer = new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(prepareExisting)));
+    observer.observe(document.body, { childList: true, subtree: true });
+    prepareExisting(document);
+  },
+
   _showModal(title, bodyHTML) {
     let modal = document.getElementById('app-modal');
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'app-modal';
       modal.className = 'modal';
-      modal.innerHTML = `<div class="modal-content"><div class="modal-title" id="app-modal-title"></div><div class="modal-body" id="app-modal-body"></div></div>`;
+      modal.innerHTML = `<div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="app-modal-title" tabindex="-1"><div class="modal-title" id="app-modal-title"></div><div class="modal-body" id="app-modal-body"></div></div>`;
       modal.addEventListener('click', (e) => { if (e.target === modal) this._closeModal(); });
       document.body.appendChild(modal);
     }
+    this._modalTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = modal.querySelector('[role="dialog"]');
+    this._modalKeydown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); this._closeModal(); return; }
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusable = [...dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(node => !node.disabled && node.offsetParent !== null);
+      if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', this._modalKeydown);
     // P2c（v94）→ v95 批次F 升级：v2 通道标题 emoji 前缀替换为 Lucide 图标
     //（v1 保持原 emoji 风格）；modal 正文内装饰性 emoji 一并就地转换
     let titleHTML = null;
@@ -2308,11 +2383,19 @@ window.App = {
     // v2：正文文本节点 emoji → Lucide（数据语义类 emoji 无映射则原样保留）
     if (window.__UI_V3__ && window.Lucide) Lucide.replaceEmojiInDOM(document.getElementById('app-modal-body'));
     modal.classList.remove('hidden');
+    const firstFocusable = dialog?.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    setTimeout(() => (firstFocusable || dialog)?.focus(), 0);
   },
 
   _closeModal() {
     const modal = document.getElementById('app-modal');
-    if (modal) modal.classList.add('hidden');
+    if (!modal || modal.classList.contains('hidden')) return;
+    modal.classList.add('hidden');
+    if (this._modalKeydown) document.removeEventListener('keydown', this._modalKeydown);
+    const trigger = this._modalTrigger;
+    this._modalTrigger = null;
+    this._modalKeydown = null;
+    if (trigger && document.contains(trigger)) setTimeout(() => trigger.focus(), 0);
   },
 
   /** v95 批次F：监听 #content 渲染，把文本节点中的装饰性 emoji 就地替换为 Lucide SVG

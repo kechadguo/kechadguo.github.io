@@ -268,13 +268,15 @@ window.QuickRecordPage = {
     Utils.showLoading('保存中...');
     try {
       if (mode === 'feeding') {
+        const subtype = result.parsed.feedingSubtype || (result.parsed.type === 'formula' || result.parsed.type === 'bottle_breast' ? 'bottle' : result.parsed.type === 'breast' ? 'breast_direct' : null);
+        if (!subtype) throw new Error('无法确定喂养类型，请使用表格修改');
         await API.createFeeding({
-          type: result.parsed.type || 'formula',
+          feedingSubtype: subtype,
+          milkSource: result.parsed.type === 'formula' ? 'formula' : 'breast_milk',
           time: result.parsed.time || new Date().toISOString(),
-          amount: result.parsed.amount || undefined,
-          unit: result.parsed.unit || 'ml',
+          ...(subtype === 'breast_direct' ? {} : { offeredMl: result.parsed.amount || undefined, consumedMl: result.parsed.amount || undefined }),
           note: '',
-          inputMethod: 'voice'
+          inputMethod: 'VOICE'
         });
       } else {
         await API.createStool({

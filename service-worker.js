@@ -2,8 +2,9 @@
  * OneOne成长日记 — Service Worker
  * 策略：Cache First（静态资源）+ Network First（API 数据）
  */
-const CACHE_NAME = 'oneone-production-r22';
-const STATIC_ASSETS = ['./','./index.html','./manifest.json','./css/v3-runtime.css','./js/theme-v3.js','./js/config.js','./js/production-runtime-config.js','./js/data/vaccine-schedule.js','./js/data/growth-standard.js','./js/data/region-data.js','./js/data/milestone-standard.js','./js/data/badges-data.js','./js/data/nursing-standard.js','./js/data/exercise-plan.js','./js/data/food-plan.js','./js/data/knowledge-parenting.js','./js/data/early-edu-courses.js','./js/utils.js','./js/auth.js','./js/api.js','./js/breast-feeding.js','./js/feeding-time-chart.js','./js/voice.js','./js/pages.js','./js/app.js'];
+// 正式构建规则：任何静态资源变更都必须生成新的唯一 CACHE_NAME，禁止复用旧版本名称。
+const CACHE_NAME = 'oneone-production-r23-release-a2d32cfb5843';
+const STATIC_ASSETS = ['./','./index.html','./manifest.json','./css/v3-runtime.css','./js/theme-v3.js','./js/config.js','./js/production-runtime-config.js','./js/v3-contract.js','./js/message-queue.js','./js/data/vaccine-schedule.js','./js/data/growth-standard.js','./js/data/region-data.js','./js/data/milestone-standard.js?v=release-a2d32cfb5843','./js/data/badges-data.js?v=release-a2d32cfb5843','./js/data/nursing-standard.js','./js/data/exercise-plan.js','./js/data/food-plan.js','./js/data/knowledge-parenting.js','./js/data/early-edu-courses.js','./js/utils.js','./js/auth.js','./js/api.js','./js/breast-feeding.js','./js/feeding-time-chart.js','./js/voice.js','./js/pages/dashboard.js','./js/pages/quick-record.js','./js/pages/analytics-page.js','./js/pages/modules-page.js','./js/pages/parenting.js','./js/pages/milestone-page.js?v=release-a2d32cfb5843','./js/pages/report-page.js','./js/pages/growth-curve.js','./js/pages/sleep-management.js','./js/pages/medical.js','./js/pages/footprint.js','./js/pages/exercise.js','./js/pages/food.js','./js/pages/early-edu.js','./js/pages/language-development.js','./js/pages/social-development.js','./js/pages/safety.js','./js/pages/parenting-lib.js','./js/focus-guide.js','./js/pages/profile-page.js','./js/pages/screening.js','./js/pages.js','./js/pages/message-center-page.js','./js/app.js'];
 
 // ===== 安装：预缓存核心静态资源 =====
 self.addEventListener('install', (event) => {
@@ -20,7 +21,7 @@ self.addEventListener('install', (event) => {
 
 // ===== 激活：清理旧缓存 + 通知客户端（页面侧决定是否自动刷新） =====
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating production R22...');
+  console.log('[SW] Activating production R23 release...');
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
@@ -57,5 +58,5 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (url.pathname.startsWith('/auth') || url.pathname.startsWith('/feeding') || url.pathname.startsWith('/stool') || url.pathname.startsWith('/sleep') || url.pathname.startsWith('/health') || url.pathname.startsWith('/family') || url.pathname.startsWith('/baby') || url.pathname.startsWith('/api/')) return;
-  event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
+  event.respondWith(caches.match(request, { ignoreSearch: true }).then(cached => cached || fetch(request)));
 });

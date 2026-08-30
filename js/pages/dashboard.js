@@ -486,8 +486,8 @@ window.DashboardPage = {
     if (dueVaccines.length === 0) return '';
 
     return `
-      <div class="card" style="background:linear-gradient(135deg,#fff7e6,#fffbe6);border:1px solid #ffd591">
-        <div class="card-title">${Lucide.icon('syringe', 18)} 疫苗提醒</div>
+      <div class="card" style="background:linear-gradient(135deg,#fff7e6,#fffbe6);border:1px solid #ffd591" onclick="showPage('messages')" role="button" tabindex="0">
+        <div class="card-title">${Lucide.icon('syringe', 18)} 疫苗提醒 <span class="text-muted">查看消息中心</span></div>
         ${dueVaccines.map(v => `
           <div class="vaccine-reminder-item">
             <div class="vr-info">
@@ -497,7 +497,7 @@ window.DashboardPage = {
                 ${v.daysUntil === 0 ? ` · ${Lucide.icon('alert-triangle', 14)} 今天` : v.daysUntil === 1 ? ` · ${Lucide.icon('alert-triangle', 14)} 明天` : ` · ${Lucide.icon('alert-triangle', 14)} ${v.daysUntil}天后`}
               </div>
             </div>
-            <button class="btn btn-primary btn-sm" onclick="MedicalPage.quickDone('${Utils.jsAttr(v.key)}')">${Lucide.icon('check-circle', 16)} 完成</button>
+            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();MedicalPage.quickDone('${Utils.jsAttr(v.key)}')">${Lucide.icon('check-circle', 16)} 完成</button>
           </div>
         `).join('')}
       </div>
@@ -515,7 +515,7 @@ window.DashboardPage = {
     const names = meds.slice(0, 3).map(m => Utils.escapeHtml(m.name)).join('、');
     const more = meds.length > 3 ? ` 等 ${meds.length} 种` : '';
     return `
-      <div class="card med-dash-remind" onclick="MedicalPage.jumpToRecords()">
+      <div class="card med-dash-remind" onclick="showPage('messages')" role="button" tabindex="0">
         <div class="med-dash-remind-icon">${Lucide.icon('pill', 18)}</div>
         <div class="med-dash-remind-body">
           <div class="med-dash-remind-title">今日已用药 ${meds.length} 次</div>

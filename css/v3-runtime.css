@@ -241,6 +241,46 @@ a, button, [role="button"], input, select, textarea, label {
 .category-soft-5 { background: color-mix(in srgb, var(--color-category-5) 14%, transparent); }
 .category-soft-6 { background: color-mix(in srgb, var(--color-category-6) 14%, transparent); }
 
+.v3-page-status {
+  position: fixed;
+  top: var(--space-safe-top);
+  left: 50%;
+  z-index: var(--z-toast);
+  transform: translateX(-50%);
+  min-height: 24px;
+  padding: 4px 10px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-caption);
+  pointer-events: none;
+}
+.v3-page-status[hidden] { display: none; }
+.v3-page-status.is-error,
+.v3-page-status.is-permission,
+.v3-page-status.is-permission-denied,
+.v3-page-status.is-auth-required,
+.v3-page-status.is-conflict { color: var(--color-error-deep); }
+.v3-page-status.is-submitting { color: var(--color-processing-deep); }
+.v3-page-status.is-partial { color: var(--color-warning-deep, var(--color-processing-deep)); }
+.v3-page-status.is-success { color: var(--color-success-deep); }
+.v3-state {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  padding: var(--space-6);
+  text-align: center;
+}
+.v3-state h2 { margin: var(--space-3) 0 var(--space-1); font-size: var(--font-size-title); }
+.v3-state p { max-width: 32rem; margin: 0 0 var(--space-4); color: var(--color-text-secondary); }
+.v3-state-icon { color: var(--color-accent); }
+.v3-state-error .v3-state-icon,
+.v3-state-permission .v3-state-icon,
+.v3-state-permission-denied .v3-state-icon,
+.v3-state-auth-required .v3-state-icon,
+.v3-state-conflict .v3-state-icon { color: var(--color-error); }
+.v3-state-submitting .v3-state-icon { color: var(--color-processing); }
+.v3-state-partial .v3-state-icon { color: var(--color-warning, var(--color-processing)); }
+.v3-state-success .v3-state-icon { color: var(--color-success); }
+
 .skeleton {
   position: relative;
   overflow: hidden;
@@ -8632,3 +8672,18 @@ html[data-ui-version="v3"] .badge-card { min-width: 0; min-height: 96px; padding
 html[data-ui-version="v3"] .badge-card.unlocked { border-color: var(--v3-brand); background: var(--v3-brand-soft); color: var(--v3-ink); }
 html[data-ui-version="v3"] .badge-card strong, html[data-ui-version="v3"] .badge-card small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 380px) { html[data-ui-version="v3"] #content { padding-left: 12px; padding-right: 12px; } html[data-ui-version="v3"] .badge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* R23 message center components */
+html[data-ui-version="v3"] .message-center-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+html[data-ui-version="v3"] .message-center-head h2 { margin: 0; font-size: 20px; }
+html[data-ui-version="v3"] .message-center-head p { margin: 4px 0 0; }
+html[data-ui-version="v3"] .message-filters { display: flex; gap: 8px; overflow-x: auto; padding: 12px 0; }
+html[data-ui-version="v3"] .message-filters .chip { min-height: 44px; flex: 0 0 auto; }
+html[data-ui-version="v3"] .message-item { display: flex; justify-content: space-between; gap: 12px; padding: 16px; margin-bottom: 10px; border: 1px solid var(--v3-line); border-radius: var(--v3-radius-md); background: var(--v3-surface); }
+html[data-ui-version="v3"] .message-item.is-unread { border-color: var(--v3-brand); box-shadow: 0 0 0 2px var(--v3-brand-soft); }
+html[data-ui-version="v3"] .message-item-main { min-width: 0; flex: 1; }
+html[data-ui-version="v3"] .message-item-meta, html[data-ui-version="v3"] .message-item-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+html[data-ui-version="v3"] .message-item h3 { margin: 8px 0 4px; font-size: 16px; }
+html[data-ui-version="v3"] .message-item p { margin: 0; color: var(--v3-ink-soft); line-height: 1.5; }
+html[data-ui-version="v3"] .message-item-actions { justify-content: flex-end; align-self: center; }
+@media (max-width: 560px) { html[data-ui-version="v3"] .message-item { flex-direction: column; } html[data-ui-version="v3"] .message-item-actions { justify-content: flex-start; } }

@@ -73,8 +73,8 @@ window.FootprintPage = {
 
     // v109 模块切换
     html += `<div class="fp-module-tabs">
-      <button class="fp-module-tab ${this._activeModule === 'walk' ? 'active' : ''}" onclick="FootprintPage._switchModule('walk')">${Lucide.icon('footprints', 16)} 下楼溜溜</button>
-      <button class="fp-module-tab ${this._activeModule === 'outing' ? 'active' : ''}" onclick="FootprintPage._switchModule('outing')">${Lucide.icon('navigation', 16)} 外出</button>
+      <button class="fp-module-tab ${this._activeModule === 'walk' ? 'active' : ''}" onclick="FootprintPage._switchModule('walk')">${Lucide.icon('footprints', 16)} 下楼遛弯</button>
+      <button class="fp-module-tab ${this._activeModule === 'outing' ? 'active' : ''}" onclick="FootprintPage._switchModule('outing')">${Lucide.icon('navigation', 16)} 市内出行</button>
     </div>`;
 
     if (this._activeModule === 'walk') {

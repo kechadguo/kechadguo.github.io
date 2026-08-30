@@ -28,6 +28,7 @@ window.AnalyticsPage = {
   async render(container) {
     const today = new Date();
     this._currentCalMonth = { year: today.getFullYear(), month: today.getMonth() + 1 };
+    container.removeAttribute('data-v3-request-state');
     container.innerHTML = this._buildSkeleton();
     await this._loadAndRender(container);
   },
@@ -44,15 +45,46 @@ window.AnalyticsPage = {
     this._loading = true;
     try {
       await this._loadAllDomainsData();
+      if (!this._hasAnalyzableRecords(this._weekData.records) && this._loadState !== 'partial') {
+        container.innerHTML = this._emptyStateHTML();
+        if (window.V3UI?.setStatus) window.V3UI.setStatus('empty', '暂无可分析记录');
+        return;
+      }
       container.innerHTML = this._buildShell();
       this._bindEvents();
       await this._switchTab(this._currentSubTab, true);
+      if (this._loadState === 'partial') {
+        container.setAttribute('data-v3-request-state', 'partial');
+        container.insertAdjacentHTML('afterbegin', this._partialStateHTML());
+        window.V3UI?.setStatus('partial', '部分分析数据加载失败');
+      }
     } catch (e) {
       console.error('[AnalyticsPage] render error:', e);
-      container.innerHTML = `<div class="card"><div class="card-title">加载失败</div><p style="color:var(--color-error)">${Utils.escapeHtml(e.message)}</p></div>`;
+      const state = window.V3UI?.errorState ? V3UI.errorState(e) : 'error';
+      container.innerHTML = window.V3UI?.stateHTML ? V3UI.stateHTML(state, '数据加载失败', e.message, '<button class="btn btn-primary" type="button" onclick="Pages.render(\'analytics\')">重新加载</button>') : `<div class="card"><div class="card-title">加载失败</div><p style="color:var(--color-error)">${Utils.escapeHtml(e.message)}</p></div>`;
+      if (window.V3UI?.setStatus) V3UI.setStatus(state, '数据加载失败');
     } finally {
       this._loading = false;
     }
+  },
+
+  _hasAnalyzableRecords(records = {}) {
+    return Object.entries(records).some(([key, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      if (key === 'vaccine' && value && typeof value === 'object') return Object.values(value).some(item => Array.isArray(item) && item.length > 0);
+      return false;
+    });
+  },
+
+  _emptyStateHTML() {
+    const action = '<button class="btn btn-primary" type="button" onclick="showPage(\'quick-record\')">去记录</button>';
+    return window.V3UI?.stateHTML ? window.V3UI.stateHTML('empty', '暂无可分析记录', '先记录一次喂养、睡眠、排便或健康数据，再回来查看分析。', action) : `<div class="empty-state"><h2>暂无可分析记录</h2><p>先记录一次数据，再回来查看分析。</p>${action}</div>`;
+  },
+
+  _partialStateHTML() {
+    const failed = this._failedDomains?.length ? `失败区域：${this._failedDomains.map(item => Utils.escapeHtml(item)).join('、')}` : '部分数据区域暂不可用';
+    const retry = '<button class="btn btn-primary" type="button" onclick="AnalyticsPage.refresh()">重试失败区域</button>';
+    return window.V3UI?.stateHTML ? `<section class="analytics-partial-notice" data-v3-state="partial">${window.V3UI.stateHTML('partial', '部分分析数据加载失败', `${failed}；已加载的数据仍保留。`, retry)}</section>` : `<section class="analytics-partial-notice" data-v3-state="partial"><strong>部分分析数据加载失败</strong><p>${failed}；已加载的数据仍保留。</p>${retry}</section>`;
   },
 
   /**
@@ -65,44 +97,13 @@ window.AnalyticsPage = {
     const start = new Date(today);
     start.setDate(start.getDate() - 180);
     const startISO = Utils.formatDate(start);
-
-    const familyId = Auth.getFamilyId();
-    const params = { startDate: startISO, endDate: endISO, page: 1, pageSize: 2000 };
-
-    let feedingData, sleepData, stoolData, healthData, moodData, cleanData, walkData, vaccineData, growthData, milestoneData;
-    try {
-      [feedingData, sleepData, stoolData, healthData, moodData, cleanData, walkData, vaccineData, growthData, milestoneData] = await Promise.all([
-        API.listFeeding ? API.listFeeding(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listSleep ? API.listSleep(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listStool ? API.listStool(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listHealth ? API.listHealth(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listMoods ? API.listMoods(startISO, endISO).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listClean ? API.listClean(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listOuting ? API.listOuting(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.getVaccineData ? API.getVaccineData().catch(() => null) : Promise.resolve(null),
-        API.listGrowth ? API.listGrowth(1).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listMilestone ? API.listMilestone().catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-      ]);
-    } catch (e) {
-      console.warn('[AnalyticsPage] _loadAllDomainsData partial failure:', e);
-    }
-
-    const records = {
-      feeding: feedingData?.records || [],
-      sleep: sleepData?.records || [],
-      stool: stoolData?.records || [],
-      health: healthData?.records || [],
-      mood: moodData?.records || [],
-      clean: cleanData?.records || [],
-      walk: walkData?.records || [],
-      vaccine: vaccineData || null,
-      growth: growthData?.records || [],
-      milestone: milestoneData?.records || [],
-    };
-
-    // 聚合每日统计（全量 180 天）
+    const snapshot = await API.getUnifiedSnapshot({ startDate: startISO, endDate: endISO });
+    if (!snapshot || !['loaded', 'partial'].includes(snapshot.status)) throw new Error('统一数据快照不可用');
+    const records = snapshot.records || { feeding: [], sleep: [], stool: [], health: [], mood: [], clean: [], walk: [], vaccine: null, growth: [], milestone: [] };
+    this._failedDomains = Array.isArray(snapshot.failedDomains) ? snapshot.failedDomains : [];
+    this._loadState = snapshot.status === 'partial' || this._failedDomains.length ? 'partial' : 'loaded';
     const dailyStats = this._aggregateDailyStats(records);
-    this._weekData = { startISO, endISO, dailyStats, records };
+    this._weekData = { startISO, endISO, dailyStats, records, snapshot };
     this._weekStats = this._computeWeekStats(dailyStats, startISO, endISO, records);
   },
 
@@ -1694,16 +1695,15 @@ window.AnalyticsPage = {
     mask.classList.add('on');
 
     try {
-      const params = { startDate: dateStr, endDate: dateStr, page: 1, pageSize: 500 };
-      const [feeding, stool, sleep, clean, todo, milestone, mood] = await Promise.all([
-        API.listFeeding ? API.listFeeding(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listStool ? API.listStool(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listSleep ? API.listSleep(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listClean ? API.listClean(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listTodo ? API.listTodo(params).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listMilestone ? API.listMilestone().catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-        API.listMoods ? API.listMoods(dateStr, dateStr).catch(() => ({ records: [] })) : Promise.resolve({ records: [] }),
-      ]);
+      const snapshot = this._weekData?.snapshot?.records ? this._weekData.snapshot : await API.getUnifiedSnapshot({ startDate: dateStr, endDate: dateStr });
+      const records = snapshot.records || {};
+      const feeding = { records: records.feeding || [] };
+      const stool = { records: records.stool || [] };
+      const sleep = { records: records.sleep || [] };
+      const clean = { records: records.clean || [] };
+      const todo = { records: records.todo || [] };
+      const milestone = { records: records.milestone || [] };
+      const mood = { records: records.mood || [] };
 
       const feedRecs = (feeding?.records || []).filter(r => Utils.localDateFromISO(r.time) === dateStr);
       const stoolRecs = (stool?.records || []).filter(r => Utils.localDateFromISO(r.time) === dateStr);

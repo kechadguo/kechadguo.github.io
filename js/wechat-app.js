@@ -594,18 +594,13 @@ window.WechatApp = {
     main.innerHTML = '<div class="wx-loading">加载中...</div>';
 
     try {
-      const [feedData, stoolData] = await Promise.all([
-        API.listFeeding({ pageSize: 30 }).catch(() => null),
-        API.listStool({ pageSize: 30 }).catch(() => null)
-      ]);
+      const snapshot = await API.getUnifiedSnapshot({ startDate: '1970-01-01', endDate: '2999-12-31' });
+      const feedData = { records: snapshot?.records?.feeding || [] };
+      const stoolData = { records: snapshot?.records?.stool || [] };
 
       let allRecords = [];
-      if (feedData?.records) {
-        feedData.records.forEach(r => { r._recordType = 'feeding'; allRecords.push(r); });
-      }
-      if (stoolData?.records) {
-        stoolData.records.forEach(r => { r._recordType = 'stool'; allRecords.push(r); });
-      }
+      feedData.records.forEach(r => { r._recordType = 'feeding'; allRecords.push(r); });
+      stoolData.records.forEach(r => { r._recordType = 'stool'; allRecords.push(r); });
       allRecords.sort((a, b) => new Date(b.time) - new Date(a.time));
 
       const typeMap = { breast: '亲喂', bottle_breast: '瓶喂', formula: '配方奶', solids: '辅食' };
@@ -687,22 +682,15 @@ window.WechatApp = {
   // ===== 今日摘要 =====
   async loadTodaySummary() {
     try {
-      const [fSum, sSum] = await Promise.all([
-        API.feedingTodaySummary().catch(() => null),
-        API.stoolTodaySummary().catch(() => null)
-      ]);
-
+      const date = new Date().toISOString().slice(0, 10);
+      const snapshot = await API.getUnifiedSnapshot({ startDate: date, endDate: date });
+      const day = snapshot?.aggregate?.byDay?.[date] || {};
       const feedCount = document.getElementById('wx-feed-count');
       const feedMl = document.getElementById('wx-feed-ml');
       const stoolCount = document.getElementById('wx-stool-count');
-
-      if (fSum) {
-        if (feedCount) feedCount.textContent = fSum.totalCount;
-        if (feedMl) feedMl.textContent = fSum.totalMl;
-      }
-      if (sSum && stoolCount) {
-        stoolCount.textContent = sSum.totalCount;
-      }
+      if (feedCount) feedCount.textContent = day.feedingCount || 0;
+      if (feedMl) feedMl.textContent = day.feedingConsumedMl || 0;
+      if (stoolCount) stoolCount.textContent = day.stoolCount || 0;
     } catch (e) {
       console.error('摘要加载失败:', e);
     }

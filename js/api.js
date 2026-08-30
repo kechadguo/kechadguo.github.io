@@ -9,6 +9,7 @@ window.API = {
   },
 
   async call(name, data, opts) {
+    data = this._prepareOfflineWrite(name, data);
     const url = `${APP_CONFIG.apiBaseUrl}/${name}`;
     const headers = { 'Content-Type': 'application/json' };
     // 从 localStorage 获取 JWT token，通过 Authorization header 发送
@@ -23,6 +24,7 @@ window.API = {
       res = await fetch(url, {
         method: 'POST',
         headers,
+        cache: 'no-store',
         body: JSON.stringify(data),
         signal: controller ? controller.signal : undefined
       });
@@ -33,16 +35,24 @@ window.API = {
       // R8 离线写入队列：简单写操作（喂养/排便/睡眠/清洁/足迹）入队，返回乐观成功
       if (!(opts && opts.skipQueue) && this._canQueue(name, data)) {
         const pending = Utils._enqueuePending({ name, data });
-        return { queued: true, pending };
+        return { queued: true, pending, syncStatus: 'PENDING' };
       }
       throw err;
     } finally {
       if (timer) clearTimeout(timer);
     }
     // 区分 HTTP 状态码
+    if (res.status === 409) {
+      const conflict = new Error('数据版本冲突，请人工合并');
+      conflict.isConflict = true;
+      conflict.httpStatus = 409;
+      conflict.code = 'CONFLICT';
+      throw conflict;
+    }
     if (res.status === 401 || res.status === 403) {
-      const err = new Error('登录已过期，请重新登录');
-      err.isAuthError = true;
+      const err = new Error(res.status === 403 ? '暂无访问权限' : '登录已过期，请重新登录');
+      err.isAuthError = res.status === 401;
+      err.isPermissionError = res.status === 403;
       err.httpStatus = res.status;
       throw err;
     }
@@ -50,9 +60,13 @@ window.API = {
     if (result.code !== 0) {
       const err = new Error(result.msg || '请求失败');
       // CloudBase 业务错误码：4008=未授权 4009=token过期（禁止引用未定义的 common 变量）
-      if (result.code === 401 || result.code === 403 || result.code === 4008 || result.code === 4009) {
-        err.isAuthError = true;
+      if (result.code === 409 || result.code === 'CONFLICT' || result.errorCode === 'CONFLICT') {
+        err.isConflict = true;
+        err.httpStatus = 409;
+        err.code = 'CONFLICT';
       }
+      if (result.code === 401 || result.code === 4008 || result.code === 4009) err.isAuthError = true;
+      if (result.code === 403) err.isPermissionError = true;
       throw err;
     }
     // 写操作响应携带 dataVersion → 同步本地版本号缓存（避免轮询误判自己的操作）
@@ -68,6 +82,43 @@ window.API = {
       action: 'create', payload: { ...record, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId(), inputMethod: record.inputMethod || 'table' }
     });
   },
+  async createFeedingEstimate(payload) {
+    return this.call(APP_CONFIG.functions.feeding, {
+      action: 'createEstimate', payload: { ...payload, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() }
+    });
+  },
+  async deleteFeedingEstimate(recordId) {
+    return this.call(APP_CONFIG.functions.feeding, { action: 'deleteEstimate', payload: { recordId, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() } });
+  },
+  async restoreFeedingEstimate(recordId) {
+    return this.call(APP_CONFIG.functions.feeding, { action: 'restoreEstimate', payload: { recordId, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() } });
+  },
+  async createPumpOutput(record) {
+    return this.call(APP_CONFIG.functions.feeding, {
+      action: 'createPumpOutput', payload: { ...record, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), inputMethod: record.inputMethod || 'table' }
+    });
+  },
+  async createInventoryBatch(record) {
+    return this.call(APP_CONFIG.functions.feeding, {
+      action: 'createInventoryBatch', payload: { ...record, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() }
+    });
+  },
+  async listInventoryBatches() {
+    return this.call(APP_CONFIG.functions.feeding, { action: 'listInventoryBatches', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() } });
+  },
+  async listInventoryTransactions() {
+    return this.call(APP_CONFIG.functions.feeding, { action: 'listInventoryTransactions', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() } });
+  },
+  async settleBottle(payload) {
+    return this.call(APP_CONFIG.functions.feeding, {
+      action: 'settleBottle', payload: { ...payload, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() }
+    });
+  },
+  async reverseInventoryTransaction(transactionId, reason = '') {
+    return this.call(APP_CONFIG.functions.feeding, {
+      action: 'reverseTransaction', payload: { transactionId, reason, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() }
+    });
+  },
   async listFeeding(params = {}) {
     return this.call(APP_CONFIG.functions.feeding, {
       action: 'list', payload: { babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), ...params }
@@ -80,6 +131,9 @@ window.API = {
   },
   async deleteFeeding(recordId) {
     return API.call(APP_CONFIG.functions.feeding, { action: 'delete', payload: { recordId, memberId: Auth.getMemberId() } });
+  },
+  async restoreFeeding(recordId) {
+    return this.call(APP_CONFIG.functions.feeding, { action: 'restore', payload: { recordId, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId() } });
   },
   // v73：更新喂养记录（默认上次/一键回溯改 type 依赖）
   async updateFeeding(recordId, data) {
@@ -198,6 +252,16 @@ window.API = {
       action: 'create', payload: { ...record, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId() }
     });
   },
+  async listMilestoneCandidates() {
+    return this.call(APP_CONFIG.functions.milestone, {
+      action: 'listCandidates', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() }
+    });
+  },
+  async confirmMilestoneCandidate(candidateId, approved) {
+    return this.call(APP_CONFIG.functions.milestone, {
+      action: approved ? 'confirmCandidate' : 'rejectCandidate', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), candidateId, approved: !!approved }
+    });
+  },
   async listMilestone() {
     return this.call(APP_CONFIG.functions.milestone, {
       action: 'list', payload: { babyId: Auth.getBabyId() }
@@ -216,6 +280,9 @@ window.API = {
   },
   async deleteMilestone(recordId) {
     return API.call(APP_CONFIG.functions.milestone, { action: 'delete', payload: { recordId } });
+  },
+  async restoreMilestone(recordId) {
+    return API.call(APP_CONFIG.functions.milestone, { action: 'restore', payload: { recordId } });
   },
 
   // ===== 待办事项 =====
@@ -286,6 +353,9 @@ window.API = {
   },
 
   // ===== 报表/导出 =====
+  async getUnifiedSnapshot(params = {}) {
+    return this.call(APP_CONFIG.functions.report, { action: 'getUnifiedSnapshot', payload: { familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId(), ...params } });
+  },
   async dailyReport() {
     return this.call(APP_CONFIG.functions.report, { action: 'daily', payload: { familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId() } });
   },
@@ -298,9 +368,18 @@ window.API = {
     try { return await this.call(APP_CONFIG.functions.report, { action: 'push', payload: { pushToken, babyId: Auth.getBabyId() } }); }
     finally { if (!silent) Utils.hideLoading(); }
   },
-  async exportAll() {
+  async getMessagePreferences() {
+    return this.call(APP_CONFIG.functions.messageCenter, { action: 'getPreferences', payload: { babyId: Auth.getBabyId() } });
+  },
+  async updateMessagePreferences(preferences) {
+    return this.call(APP_CONFIG.functions.messageCenter, { action: 'updatePreferences', payload: { babyId: Auth.getBabyId(), ...preferences } });
+  },
+  async createSystemMessage(title, text, messageKey) {
+    return this.call(APP_CONFIG.functions.messageCenter, { action: 'createSystemMessage', payload: { title, text, messageKey, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId() } });
+  },
+  async exportAll(options = {}) {
     Utils.showLoading('正在导出全部数据...');
-    try { return await this.call(APP_CONFIG.functions.export, { action: 'exportAll', payload: { familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), includeDeleted: false } }); }
+    try { return await this.call(APP_CONFIG.functions.export, { action: 'exportAll', payload: { familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), includeDeleted: options.includeDeleted !== false, format: options.format || 'json+csv' } }); }
     finally { Utils.hideLoading(); }
   },
 
@@ -572,14 +651,51 @@ window.API = {
     });
   },
 
-  // ===== R8 离线队列 =====
+  // ===== R23 消息中心 =====
+  async listMessages(params = {}) {
+    return this.call(APP_CONFIG.functions.messageCenter || 'message-center', {
+      action: 'list', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), ...params }
+    });
+  },
+  async updateMessageState(messageId, state, quietUntil = null) {
+    return this.call(APP_CONFIG.functions.messageCenter || 'message-center', {
+      action: 'updateState', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), messageId, state, ...(quietUntil ? { quietUntil } : {}) }
+    });
+  },
+  async archiveMessage(messageId) {
+    return this.call(APP_CONFIG.functions.messageCenter || 'message-center', {
+      action: 'archive', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), messageId }
+    });
+  },
 
-  /** 是否可入离线队列：仅白名单模块的 create/update/delete 简单写操作 */
-  _canQueue(name, data) {
-    const WRITE_ACTIONS = ['create', 'update', 'delete'];
-    if (!data || !data.action || WRITE_ACTIONS.indexOf(data.action) === -1) return false;
-    // name 兼容带路径前缀（如 cloudfunctions/clean）
+  async materializeAlertMessages(context = {}) {
+    return this.call(APP_CONFIG.functions.messageCenter || 'message-center', {
+      action: 'materializeAlerts', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), businessDate: context.businessDate || new Date().toISOString().slice(0, 10) }
+    });
+  },
+  async restoreMessage(messageId) {
+    return this.call(APP_CONFIG.functions.messageCenter || 'message-center', {
+      action: 'restore', payload: { familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), messageId }
+    });
+  },
+
+  // ===== R8 离线队列 =====
+  _prepareOfflineWrite(name, data) {
+    const WRITE_ACTIONS = ['create', 'createPumpOutput', 'createEstimate', 'createInventoryBatch', 'settleBottle', 'reverseTransaction', 'addPumpTest', 'deletePumpTest', 'update', 'delete', 'restore', 'complete', 'uncomplete', 'confirmCandidate', 'rejectCandidate', 'outingCreate', 'outingUpdate', 'outingDelete'];
     const fn = String(name || '').split('/').pop();
-    return ['feeding', 'stool', 'sleep', 'clean', 'footprint'].indexOf(fn) !== -1;
+    if (!data || !data.payload || !WRITE_ACTIONS.includes(data.action) || !['feeding', 'stool', 'sleep', 'clean', 'footprint', 'todo', 'milestone'].includes(fn)) return data;
+    const payload = { ...data.payload };
+    const id = payload.clientEventId || payload.clientOperationId || ('client-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+    payload.clientEventId = id;
+    payload.clientOperationId = payload.clientOperationId || id;
+    if (payload.baseVersion === undefined || payload.baseVersion === null) payload.baseVersion = Utils.storage.get('dv');
+    return { ...data, payload };
+  },
+
+  _canQueue(name, data) {
+    const WRITE_ACTIONS = ['create', 'createPumpOutput', 'createEstimate', 'createInventoryBatch', 'settleBottle', 'reverseTransaction', 'addPumpTest', 'deletePumpTest', 'update', 'delete', 'restore', 'complete', 'uncomplete', 'confirmCandidate', 'rejectCandidate', 'outingCreate', 'outingUpdate', 'outingDelete'];
+    if (!data || !data.action || WRITE_ACTIONS.indexOf(data.action) === -1) return false;
+    const fn = String(name || '').split('/').pop();
+    return ['feeding', 'stool', 'sleep', 'clean', 'footprint', 'todo', 'milestone'].indexOf(fn) !== -1;
   }
 };

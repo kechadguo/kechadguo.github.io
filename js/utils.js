@@ -829,10 +829,20 @@ window.Utils = {
   /** 入队（仅 API.call 内部调用；入队后同步条进入待同步态） */
   _enqueuePending(req) {
     const q = this.storage.get('pendingQueue') || [];
+    const payload = req.data?.payload || {};
     q.push({
       id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+      clientEventId: payload.clientEventId || ('client-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+      familyId: payload.familyId || Auth.getFamilyId?.() || null,
+      babyId: payload.babyId || Auth.getBabyId?.() || null,
+      baseVersion: payload.baseVersion ?? this.storage.get('dv') ?? null,
+      operation: req.data?.action || null,
       name: req.name,
       data: req.data,
+      createdAt: new Date().toISOString(),
+      retryCount: 0,
+      syncStatus: 'PENDING',
+      lastError: null,
       ts: Date.now()
     });
     this.storage.set('pendingQueue', q);
@@ -841,28 +851,41 @@ window.Utils = {
     return q.length;
   },
 
-  /** 回线自动同步：逐条重放写操作，返回 { synced, failed } */
+  /** 回线自动同步：逐条重放写操作，保留失败项及其后的未处理项 */
   async flushPending() {
-    const q = this.storage.get('pendingQueue') || [];
-    if (!q.length) return { synced: 0, failed: 0 };
-    let synced = 0, failed = 0;
+    const queue = this.storage.get('pendingQueue') || [];
+    if (!queue.length) return { synced: 0, failed: 0, authRequired: 0, conflicts: 0 };
     const remain = [];
-    for (const item of q) {
+    let synced = 0, failed = 0, authRequired = 0, conflicts = 0;
+    for (let index = 0; index < queue.length; index++) {
+      const item = queue[index];
       try {
-        // skipQueue：重放不再入队，避免失败后二次入队死循环
-        await window.API.call(item.name, item.data, { skipQueue: true });
+        const replayData = {
+          ...item.data,
+          payload: { ...(item.data?.payload || {}), clientEventId: item.clientEventId, baseVersion: item.baseVersion }
+        };
+        await window.API.call(item.name, replayData, { skipQueue: true });
         synced++;
-      } catch (e) {
+      } catch (error) {
         failed++;
-        remain.push(item);
-        // 网络未恢复 / 认证失效：停止本轮，剩余保留待下次重试
-        if (e && (e.isNetworkError || e.isAuthError)) break;
+        const isAuth = !!(error && (error.isAuthError || error.httpStatus === 401 || error.httpStatus === 403));
+        const isConflict = !!(error && (error.isConflict || error.httpStatus === 409 || error.code === 409 || error.code === 'CONFLICT'));
+        const status = isAuth ? 'AUTH_REQUIRED' : (isConflict ? 'CONFLICT' : (error?.isNetworkError ? 'PENDING' : 'FAILED'));
+        if (isAuth) authRequired++;
+        if (isConflict) conflicts++;
+        remain.push({
+          ...item,
+          retryCount: Number(item.retryCount || 0) + 1,
+          syncStatus: status,
+          lastError: String(error?.code || error?.httpStatus || error?.name || error?.message || '同步失败').replace(/[\r\n]/g, ' ').slice(0, 160)
+        });
+        remain.push(...queue.slice(index + 1));
         break;
       }
     }
     this.storage.set('pendingQueue', remain);
     if (window.CoopV2) CoopV2.refreshPending();
-    return { synced, failed };
+    return { synced, failed, authRequired, conflicts };
   },
 
   /** 编辑/删除等敏感操作前置守卫：离线或有待同步记录时提示并返回 false */
