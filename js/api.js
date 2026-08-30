@@ -104,7 +104,7 @@ window.API = {
   assertFeedingWriteConfirmed(data) {
     const sourceRecordId = data?.sourceRecordId || data?.recordId;
     const eventFactId = data?.eventFactId || data?.factId || data?.resourceIds?.event_facts?.[0];
-    const factSync = data?.factSync === true || Boolean(eventFactId);
+    const factSync = data?.factSync === true;
     if (!sourceRecordId || !eventFactId || !factSync) {
       const error = new Error('服务端未确认喂养记录及事实同步');
       error.code = 'INCOMPLETE_WRITE_CONFIRMATION';
