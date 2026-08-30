@@ -4,6 +4,7 @@
 window.App = {
   stoolPhotoFile: null,
   _aiRecognized: false,
+  _feedingSubmitPending: false,
   _modalTrigger: null,
   _modalKeydown: null,
 
@@ -1055,16 +1056,28 @@ window.App = {
       data.unit = 'ml';
     }
 
+    if (this._feedingSubmitPending) return;
+    const clientRequestId = globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this._feedingSubmitPending = true;
     Utils.showLoading('保存中...');
     try {
-      await API.createFeeding(data);
-      Utils.hideLoading();
+      const result = await API.createFeeding({ ...data, clientRequestId, clientEventId: clientRequestId, clientOperationId: clientRequestId });
+      if (!result?.sourceRecordId || !result?.eventFactId || result.factSync !== true) {
+        const error = new Error('服务端未确认喂养记录及事实同步');
+        error.code = 'INCOMPLETE_WRITE_CONFIRMATION';
+        throw error;
+      }
+      Utils.setLastFeedInput(this._feedType, { amount });
       this._closeModal();
       this._feedType = '';
       Utils.showToast(' 已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message); }
-    finally { Utils.hideLoading(); }
+    } catch (e) {
+      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message);
+    } finally {
+      this._feedingSubmitPending = false;
+      Utils.hideLoading();
+    }
   },
 
   // ===== 排便表单（含拍照AI） =====

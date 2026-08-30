@@ -62,8 +62,14 @@ window.API = {
         throw err;
       }
       const result = await Promise.race([res.json(), timeoutPromise]);
-      const resultCode = Number(result?.code ?? 0);
-      if (resultCode !== 0) {
+      if (!result || !Object.prototype.hasOwnProperty.call(result, 'code')) {
+        const err = new Error('响应缺少业务状态码');
+        err.code = 'INVALID_RESPONSE';
+        err.httpStatus = res.status;
+        throw err;
+      }
+      const resultCode = Number(result.code);
+      if (!Number.isFinite(resultCode) || resultCode !== 0) {
         const err = new Error(result.msg || result.message || '请求失败');
         err.code = result.code;
         err.errorCode = result.errorCode || null;
@@ -81,7 +87,7 @@ window.API = {
       if (result.data && result.data.dataVersion != null) Utils.storage.set('dv', result.data.dataVersion);
       return result.data;
     } catch (e) {
-      if (e?.isAuthError || e?.isPermissionError || e?.isFunctionNotFound || e?.isConflict) throw e;
+      if (e?.isAuthError || e?.isPermissionError || e?.isFunctionNotFound || e?.isConflict || e?.errorCode || (e?.httpStatus >= 200 && e?.httpStatus < 500 && e?.code != null)) throw e;
       const err = e?.isTimeoutError || timedOut ? timeoutError() : new Error(e.message || '网络连接失败');
       if (!err.isTimeoutError && navigator.onLine === false) err.isNetworkError = true;
       if (!(opts && opts.skipQueue) && !err.isTimeoutError && this._canQueue(name, data)) {
@@ -95,12 +101,25 @@ window.API = {
   },
 
   // ===== 喂养 =====
+  assertFeedingWriteConfirmed(data) {
+    const sourceRecordId = data?.sourceRecordId || data?.recordId;
+    const eventFactId = data?.eventFactId || data?.factId || data?.resourceIds?.event_facts?.[0];
+    const factSync = data?.factSync === true || Boolean(eventFactId);
+    if (!sourceRecordId || !eventFactId || !factSync) {
+      const error = new Error('服务端未确认喂养记录及事实同步');
+      error.code = 'INCOMPLETE_WRITE_CONFIRMATION';
+      error.responseData = data;
+      throw error;
+    }
+    return { ...data, sourceRecordId, eventFactId, factSync: true };
+  },
   async createFeeding(record) {
     const clientRequestId = record.clientRequestId || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const time = record.time || record.occurredAt || new Date().toISOString();
-    return this.call(APP_CONFIG.functions.feeding, {
+    const data = await this.call(APP_CONFIG.functions.feeding, {
       action: 'create', payload: { ...record, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId(), feedingType: record.feedingType || record.feedingSubtype || record.type, time, occurredAt: time, clientRequestId, clientEventId: record.clientEventId || clientRequestId, clientOperationId: record.clientOperationId || clientRequestId, inputMethod: record.inputMethod || 'table' }
     });
+    return this.assertFeedingWriteConfirmed(data);
   },
   async createFeedingEstimate(payload) {
     return this.call(APP_CONFIG.functions.feeding, {
