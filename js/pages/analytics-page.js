@@ -26,11 +26,12 @@ window.AnalyticsPage = {
 
   // ===== 渲染入口 =====
   async render(container) {
+    const renderSeq = container.dataset.renderSeq;
     const today = new Date();
     this._currentCalMonth = { year: today.getFullYear(), month: today.getMonth() + 1 };
     container.removeAttribute('data-v3-request-state');
     container.innerHTML = this._buildSkeleton();
-    await this._loadAndRender(container);
+    await this._loadAndRender(container, renderSeq);
   },
 
   async refresh() {
@@ -41,10 +42,12 @@ window.AnalyticsPage = {
   // ============================================================
   // 数据加载（一次加载最近 180 天，各子Tab 从缓存过滤）
   // ============================================================
-  async _loadAndRender(container) {
+  async _loadAndRender(container, renderSeq = container.dataset.renderSeq) {
     this._loading = true;
+    const isCurrent = () => container.dataset.renderSeq === String(renderSeq) && container.dataset.renderPage === 'analytics';
     try {
       await this._loadAllDomainsData();
+      if (!isCurrent()) return;
       if (!this._hasAnalyzableRecords(this._weekData.records) && this._loadState !== 'partial') {
         container.innerHTML = this._emptyStateHTML();
         if (window.V3UI?.setStatus) window.V3UI.setStatus('empty', '暂无可分析记录');
@@ -59,12 +62,18 @@ window.AnalyticsPage = {
         window.V3UI?.setStatus('partial', '部分分析数据加载失败');
       }
     } catch (e) {
+      if (!isCurrent()) return;
       console.error('[AnalyticsPage] render error:', e);
       const state = window.V3UI?.errorState ? V3UI.errorState(e) : 'error';
-      container.innerHTML = window.V3UI?.stateHTML ? V3UI.stateHTML(state, '数据加载失败', e.message, '<button class="btn btn-primary" type="button" onclick="Pages.render(\'analytics\')">重新加载</button>') : `<div class="card"><div class="card-title">加载失败</div><p style="color:var(--color-error)">${Utils.escapeHtml(e.message)}</p></div>`;
-      if (window.V3UI?.setStatus) V3UI.setStatus(state, '数据加载失败');
+      const titles = { 'auth-required': '请先登录', 'function-not-found': '服务暂未部署', timeout: '请求超时，请重试', offline: '当前离线', 'permission-denied': '暂无访问权限' };
+      const title = titles[state] || '数据加载失败';
+      const desc = state === 'auth-required' ? '登录后才能查看数据分析。' : state === 'timeout' ? '请求超时，请稍后重试。' : e.message;
+      container.setAttribute('data-v3-request-state', state);
+      container.innerHTML = window.V3UI?.stateHTML ? V3UI.stateHTML(state, title, desc, '<button class="btn btn-primary" type="button" onclick="Pages.render(\'analytics\')">重新加载</button>') : `<div class="card"><div class="card-title">${Utils.escapeHtml(title)}</div><p>${Utils.escapeHtml(desc)}</p></div>`;
+      if (window.V3UI?.setStatus) V3UI.setStatus(state, title);
     } finally {
       this._loading = false;
+      if (window.V3UI?.setStatus && !document.querySelector('#content [data-v3-state]')) window.V3UI.setStatus('loaded', '');
     }
   },
 

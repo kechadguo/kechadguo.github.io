@@ -11,6 +11,7 @@ window.ParentingPage = {
   _sleepKnowOpenItem: -1,
 
   async render(container, subTab) {
+    const renderSeq = container.dataset.renderSeq;
     if (subTab) this.currentSub = subTab;
     const tabs = [
       { key: 'feeding', label: '喂养记录' },
@@ -26,7 +27,7 @@ window.ParentingPage = {
       <div id="parenting-content"></div>
     `;
 
-    await this._renderSub();
+    await this._renderSub(renderSeq);
   },
 
   async switchSub(key) {
@@ -158,7 +159,9 @@ window.ParentingPage = {
       </div>`;
   },
 
-  async _renderSub() {
+  async _renderSub(renderSeq = document.getElementById('content')?.dataset.renderSeq) {
+    const content = document.getElementById('content');
+    if (content?.dataset.renderPage !== 'parenting' || content?.dataset.renderSeq !== String(renderSeq)) return;
     const el = document.getElementById('parenting-content');
     if (!el) return;
     Utils.showLoading();
@@ -173,9 +176,16 @@ window.ParentingPage = {
         case 'sleep': await this._renderSleep(el); break;
       }
     } catch (e) {
-      el.innerHTML = `<div class="empty-state"><div class="empty-icon">${Lucide.icon('alert-triangle', 32)}</div><p>加载失败: ${Utils.escapeHtml(e.message)}</p></div>`;
+      const state = window.V3UI?.errorState ? V3UI.errorState(e) : 'error';
+      const title = state === 'auth-required' ? '请先登录' : state === 'function-not-found' ? '服务暂未部署' : state === 'timeout' ? '请求超时，请重试' : state === 'offline' ? '当前离线' : '成长日记暂不可用';
+      const desc = state === 'auth-required' ? '登录后才能查看成长记录。' : state === 'timeout' ? '请求超时，请稍后重试。' : e.message || '请稍后重试。';
+      el.innerHTML = window.V3UI?.stateHTML ? V3UI.stateHTML(state, title, desc, '<button class="btn btn-primary" type="button" onclick="ParentingPage._renderSub()">重新加载</button>') : `<div class="empty-state"><h2>${Utils.escapeHtml(title)}</h2><p>${Utils.escapeHtml(desc)}</p></div>`;
+      el.setAttribute('data-v3-request-state', state);
+      window.V3UI?.setStatus?.(state, title);
+    } finally {
+      Utils.hideLoading();
+      if (!el.querySelector('[data-v3-state]')) window.V3UI?.setStatus?.('loaded', '');
     }
-    Utils.hideLoading();
   },
 
   // ===== 喂养 =====

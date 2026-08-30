@@ -3,17 +3,23 @@ window.MessageCenterPage = {
   messages: [],
   filter: 'all',
   async render(container) {
+    const renderSeq = container.dataset.renderSeq;
+    const isCurrent = () => container.dataset.renderSeq === String(renderSeq) && container.dataset.renderPage === 'messages';
     container.innerHTML = '<section class="state-card loading-state" aria-live="polite">加载消息中...</section>';
     try {
       const result = await API.listMessages({ page: 1, pageSize: 100, includeArchived: false });
+      if (!isCurrent()) return;
       this.messages = MessageQueue.normalizeList(result);
       this._render(container);
     } catch (error) {
-      const state = error?.isFunctionNotFound ? 'function-not-found' : (error?.isAuthError ? 'auth-required' : (error?.isPermissionError ? 'permission-denied' : (error?.isNetworkError ? 'offline' : 'error')));
-      const title = { 'function-not-found': '消息服务未部署', 'auth-required': '请先登录', 'permission-denied': '暂无访问权限', offline: '当前离线', error: '消息服务异常' }[state];
-      const desc = { 'function-not-found': '消息中心服务尚未部署，请稍后再试。', 'auth-required': '登录后才能查看家庭消息。', 'permission-denied': '请切换到有权限的家庭或联系管理员。', offline: '当前网络不可用，恢复网络后可重试。', error: error?.message || '请稍后重试。' }[state];
+      if (!isCurrent()) return;
+      const state = error?.isFunctionNotFound ? 'function-not-found' : (error?.isAuthError ? 'auth-required' : (error?.isPermissionError ? 'permission-denied' : (error?.isTimeoutError ? 'timeout' : (error?.isNetworkError && navigator.onLine === false ? 'offline' : 'error'))));
+      const title = { 'function-not-found': '服务暂未部署', 'auth-required': '请先登录', 'permission-denied': '暂无访问权限', timeout: '请求超时，请重试', offline: '当前离线', error: '消息服务异常' }[state];
+      const desc = { 'function-not-found': '消息中心服务尚未部署，请稍后再试。', 'auth-required': '登录后才能查看家庭消息。', 'permission-denied': '请切换到有权限的家庭或联系管理员。', timeout: '请求超时，请稍后重试。', offline: '当前网络不可用，恢复网络后可重试。', error: error?.message || '请稍后重试。' }[state];
       container.innerHTML = V3UI?.stateHTML ? V3UI.stateHTML(state, title, desc, '<button class="btn btn-outline" type="button" onclick="MessageCenterPage.render(document.getElementById(\'content\'))">重试</button>') : `<section class="state-card error-state" role="alert"><strong>${title}</strong><p>${Utils.escapeHtml(desc)}</p><button class="btn btn-outline" type="button" onclick="MessageCenterPage.render(document.getElementById('content'))">重试</button></section>`;
       V3UI?.setStatus?.(state, title);
+    } finally {
+      if (!container.querySelector('[data-v3-state]') && !container.querySelector('.message-center')) V3UI?.setStatus?.('loaded', '');
     }
   },
   _render(container) {

@@ -35,7 +35,8 @@ window.V3UI = window.V3UI || {
     if (!content || !stats) return;
     const explicitState = content.dataset.v3RequestState || content.querySelector('[data-v3-state]')?.dataset.v3State || null;
     if (explicitState) {
-      this.setStatus(explicitState, explicitState === 'partial' ? '部分内容加载失败' : '');
+      const labels = { 'auth-required': '请先登录', 'function-not-found': '服务暂未部署', timeout: '请求超时，请重试', offline: '当前离线', 'permission-denied': '暂无访问权限', error: '页面加载失败', conflict: '数据发生冲突', partial: '部分内容加载失败' };
+      this.setStatus(explicitState, labels[explicitState] || '');
       return;
     }
     if (!stats.failed) {
@@ -66,8 +67,8 @@ window.V3UI = window.V3UI || {
     status.hidden = !message;
   },
   stateHTML(state, title, desc = '', action = '') {
-    const icon = ['error', 'function-not-found', 'permission-denied', 'auth-required', 'conflict'].includes(state) ? (state === 'auth-required' ? 'log-in' : (state === 'conflict' ? 'git-merge' : (state === 'permission-denied' ? 'lock' : (state === 'function-not-found' ? 'package-x' : 'alert-circle')))) : (state === 'empty' ? 'inbox' : (state === 'offline' ? 'wifi-off' : (state === 'success' ? 'check-circle' : (state === 'partial' ? 'triangle-alert' : 'loader-circle'))));
-    const role = ['error', 'function-not-found', 'permission-denied', 'auth-required', 'conflict', 'partial'].includes(state) ? 'alert' : 'status';
+    const icon = ['error', 'function-not-found', 'permission-denied', 'auth-required', 'conflict', 'timeout'].includes(state) ? (state === 'auth-required' ? 'log-in' : (state === 'conflict' ? 'git-merge' : (state === 'permission-denied' ? 'lock' : (state === 'function-not-found' ? 'package-x' : (state === 'timeout' ? 'clock-3' : 'alert-circle'))))) : (state === 'empty' ? 'inbox' : (state === 'offline' ? 'wifi-off' : (state === 'success' ? 'check-circle' : (state === 'partial' ? 'triangle-alert' : 'loader-circle'))));
+    const role = ['error', 'function-not-found', 'permission-denied', 'auth-required', 'conflict', 'timeout', 'partial'].includes(state) ? 'alert' : 'status';
     return `<section class="v3-state v3-state-${state}" data-v3-state="${state}" role="${role}"><div class="v3-state-icon" aria-hidden="true">${window.Lucide?.icon ? Lucide.icon(icon, 28) : ''}</div><h2>${Utils.escapeHtml(title)}</h2>${desc ? `<p>${Utils.escapeHtml(desc)}</p>` : ''}${action}</section>`;
   },
   errorState(error) {
@@ -76,7 +77,8 @@ window.V3UI = window.V3UI || {
     if (error?.isAuthError || error?.code === 4008 || error?.code === 4009) return 'auth-required';
     if (error?.isConflict || error?.code === 'CONFLICT' || error?.httpStatus === 409) return 'conflict';
     const code = Number(error?.code || error?.status || error?.response?.code);
-    return code === 4003 || code === 403 ? 'permission-denied' : (error?.isNetworkError ? 'offline' : 'error');
+    if (error?.isTimeoutError) return 'timeout';
+    return code === 4003 || code === 403 ? 'permission-denied' : (error?.isNetworkError && navigator.onLine === false ? 'offline' : 'error');
   }
 };
 window.Pages = {
@@ -89,8 +91,22 @@ window.Pages = {
     const backBtn = document.getElementById('btn-back');
     const titleEl = document.getElementById('page-title');
     if (!content || !backBtn || !titleEl) return;
+    const renderSeq = (this._renderSeq || 0) + 1;
+    this._renderSeq = renderSeq;
+    content.dataset.renderSeq = String(renderSeq);
+    content.dataset.renderPage = page;
+    content.innerHTML = '';
+    content.removeAttribute('data-v3-request-state');
+    V3UI.setStatus('', '');
     V3UI.setStatus('loading', '页面加载中');
     V3UI.beginRequestTracking(page);
+    if (['analytics', 'messages', 'parenting'].includes(page) && !Auth?.getLocalAuth?.()?.token) {
+      content.innerHTML = V3UI.stateHTML('auth-required', '请先登录', page === 'parenting' ? '登录后才能查看成长记录。' : page === 'messages' ? '登录后才能查看家庭消息。' : '登录后才能查看数据分析。', `<button class="btn btn-primary" type="button" onclick="showPage('onboarding')">去登录</button>`);
+      content.setAttribute('data-v3-request-state', 'auth-required');
+      V3UI.endRequestTracking();
+      V3UI.setStatus('auth-required', '请先登录');
+      return;
+    }
 
     // R10 K4：v2 通道切换页面先出骨架屏（页面 render 内部用真实内容覆盖；
     // 同步页 <300ms 覆盖不闪烁；异步页数据到达前显示呼吸块 → CLS 友好）
@@ -230,16 +246,18 @@ window.Pages = {
         content.innerHTML = V3UI.stateHTML('empty', '页面不存在', '请返回上一页继续操作');
     }
     } catch (error) {
+      if (renderSeq !== this._renderSeq) return;
       const state = V3UI.errorState(error);
       const retry = `<button class="btn btn-primary" type="button" onclick="showPage('${Utils.jsAttr(page)}')">重新加载</button>`;
-        const title = state === 'function-not-found' ? '服务暂未部署' : (state === 'permission-denied' ? '暂无访问权限' : (state === 'auth-required' ? '请先登录' : (state === 'conflict' ? '数据发生冲突' : (state === 'offline' ? '当前离线' : '页面加载失败'))));
-      const desc = state === 'function-not-found' ? '当前功能服务尚未部署，请稍后再试' : (state === 'permission-denied' ? '请切换到有权限的家庭或联系管理员' : (state === 'auth-required' ? '登录后才能查看此页面' : (state === 'conflict' ? '请刷新后重试' : (state === 'offline' ? '联网后可同步数据' : '请稍后重试'))));
+        const title = state === 'function-not-found' ? '服务暂未部署' : (state === 'permission-denied' ? '暂无访问权限' : (state === 'auth-required' ? '请先登录' : (state === 'conflict' ? '数据发生冲突' : (state === 'timeout' ? '请求超时，请重试' : (state === 'offline' ? '当前离线' : '页面加载失败')))));
+      const desc = state === 'function-not-found' ? '当前功能服务尚未部署，请稍后再试' : (state === 'permission-denied' ? '请切换到有权限的家庭或联系管理员' : (state === 'auth-required' ? '登录后才能查看此页面' : (state === 'conflict' ? '请刷新后重试' : (state === 'timeout' ? '请求超时，请重试' : (state === 'offline' ? '联网后可同步数据' : '请稍后重试')))));
       content.innerHTML = V3UI.stateHTML(state, title, desc, retry);
       V3UI.endRequestTracking();
-      V3UI.setStatus(state, title);
+      V3UI.setStatus(state, state === 'auth-required' ? '请先登录' : state === 'function-not-found' ? '服务暂未部署' : state === 'timeout' ? '请求超时，请重试' : title);
       return;
     }
 
+    if (renderSeq !== this._renderSeq || content.dataset.renderSeq !== String(renderSeq) || content.dataset.renderPage !== page) return;
     // 页面模块自行处理业务数据和空态；路由只负责统一壳层状态。
     V3UI.applyRequestState(content, V3UI.endRequestTracking());
     content.scrollTop = 0;

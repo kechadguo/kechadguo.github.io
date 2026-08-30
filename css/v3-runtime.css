@@ -8684,5 +8684,8 @@ html[data-ui-version="v3"] .message-item-main { min-width: 0; flex: 1; }
 html[data-ui-version="v3"] .message-item-meta, html[data-ui-version="v3"] .message-item-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 html[data-ui-version="v3"] .message-item h3 { margin: 8px 0 4px; font-size: 16px; }
 html[data-ui-version="v3"] .message-item p { margin: 0; color: var(--v3-ink-soft); line-height: 1.5; }
+html[data-ui-version="v3"] .card, html[data-ui-version="v3"] .state-card, html[data-ui-version="v3"] .empty-state, html[data-ui-version="v3"] .empty-mini { border-radius: var(--v3-radius-md); box-shadow: var(--v3-shadow-sm); }
+html[data-ui-version="v3"] .btn, html[data-ui-version="v3"] button.btn, html[data-ui-version="v3"] .primary-button, html[data-ui-version="v3"] .secondary-button { min-height: 44px; border-radius: var(--v3-radius-md); font: inherit; font-weight: 600; }
+html[data-ui-version="v3"] .chip, html[data-ui-version="v3"] .seg-btn, html[data-ui-version="v3"] .sub-tab { min-height: 44px; border-radius: var(--v3-radius-md); }
 html[data-ui-version="v3"] .message-item-actions { justify-content: flex-end; align-self: center; }
 @media (max-width: 560px) { html[data-ui-version="v3"] .message-item { flex-direction: column; } html[data-ui-version="v3"] .message-item-actions { justify-content: flex-start; } }

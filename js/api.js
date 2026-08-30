@@ -16,72 +16,78 @@ window.API = {
     const token = this._getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
     let res;
-    // v67：请求超时保护。弱网/云函数网关挂起时 fetch 可能永久 pending，
-    // 导致页面（如设置页）无限等待白屏。15s 强制中断，调用方走错误分支。
+    let timedOut = false;
+    let timer;
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), 15000) : null;
+    const timeoutError = () => {
+      const error = new Error('请求超时，请重试');
+      error.isTimeoutError = true;
+      return error;
+    };
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller?.abort();
+        reject(timeoutError());
+      }, 12000);
+    });
     try {
-      res = await fetch(url, {
+      res = await Promise.race([fetch(url, {
         method: 'POST',
         headers,
         cache: 'no-store',
         body: JSON.stringify(data),
         signal: controller ? controller.signal : undefined
-      });
+      }), timeoutPromise]);
+      // 区分 HTTP 状态码
+      if (res.status === 404) {
+        const err = new Error('服务暂未部署');
+        err.isFunctionNotFound = true;
+        err.httpStatus = 404;
+        err.code = 'FUNCTION_NOT_FOUND';
+        throw err;
+      }
+      if (res.status === 409) {
+        const conflict = new Error('数据版本冲突，请人工合并');
+        conflict.isConflict = true;
+        conflict.httpStatus = 409;
+        conflict.code = 'CONFLICT';
+        throw conflict;
+      }
+      if (res.status === 401 || res.status === 403) {
+        const err = new Error(res.status === 403 ? '暂无访问权限' : '登录已过期，请重新登录');
+        err.isAuthError = res.status === 401;
+        err.isPermissionError = res.status === 403;
+        err.httpStatus = res.status;
+        throw err;
+      }
+      const result = await Promise.race([res.json(), timeoutPromise]);
+      if (result.code !== 0) {
+        const err = new Error(result.msg || '请求失败');
+        if (result.code === 404 || result.errorCode === 'FUNCTION_NOT_FOUND') { err.isFunctionNotFound = true; err.httpStatus = 404; err.code = 'FUNCTION_NOT_FOUND'; }
+        if (result.code === 409 || result.code === 'CONFLICT' || result.errorCode === 'CONFLICT') {
+          err.isConflict = true;
+          err.httpStatus = 409;
+          err.code = 'CONFLICT';
+        }
+        if (result.code === 401 || result.code === 4008 || result.code === 4009) err.isAuthError = true;
+        if (result.code === 403) err.isPermissionError = true;
+        throw err;
+      }
+      if (result.data && result.data.dataVersion != null) Utils.storage.set('dv', result.data.dataVersion);
+      return result.data;
     } catch (e) {
-      // 网络错误（离线/超时）—— 附加标记，调用方可区分
-      const err = new Error(e && e.name === 'AbortError' ? '请求超时，请检查网络' : (e.message || '网络连接失败'));
-      err.isNetworkError = true;
-      // R8 离线写入队列：简单写操作（喂养/排便/睡眠/清洁/足迹）入队，返回乐观成功
-      if (!(opts && opts.skipQueue) && this._canQueue(name, data)) {
+      if (e?.isAuthError || e?.isPermissionError || e?.isFunctionNotFound || e?.isConflict) throw e;
+      const err = e?.isTimeoutError || timedOut ? timeoutError() : new Error(e.message || '网络连接失败');
+      if (!err.isTimeoutError && navigator.onLine === false) err.isNetworkError = true;
+      if (!(opts && opts.skipQueue) && !err.isTimeoutError && this._canQueue(name, data)) {
         const pending = Utils._enqueuePending({ name, data });
         return { queued: true, pending, syncStatus: 'PENDING' };
       }
       throw err;
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     }
-    // 区分 HTTP 状态码
-    if (res.status === 404) {
-      const err = new Error('服务暂未部署');
-      err.isFunctionNotFound = true;
-      err.httpStatus = 404;
-      err.code = 'FUNCTION_NOT_FOUND';
-      throw err;
-    }
-    if (res.status === 409) {
-      const conflict = new Error('数据版本冲突，请人工合并');
-      conflict.isConflict = true;
-      conflict.httpStatus = 409;
-      conflict.code = 'CONFLICT';
-      throw conflict;
-    }
-    if (res.status === 401 || res.status === 403) {
-      const err = new Error(res.status === 403 ? '暂无访问权限' : '登录已过期，请重新登录');
-      err.isAuthError = res.status === 401;
-      err.isPermissionError = res.status === 403;
-      err.httpStatus = res.status;
-      throw err;
-    }
-    const result = await res.json();
-    if (result.code !== 0) {
-      const err = new Error(result.msg || '请求失败');
-      if (result.code === 404 || result.errorCode === 'FUNCTION_NOT_FOUND') { err.isFunctionNotFound = true; err.httpStatus = 404; err.code = 'FUNCTION_NOT_FOUND'; }
-      // CloudBase 业务错误码：4008=未授权 4009=token过期（禁止引用未定义的 common 变量）
-      if (result.code === 409 || result.code === 'CONFLICT' || result.errorCode === 'CONFLICT') {
-        err.isConflict = true;
-        err.httpStatus = 409;
-        err.code = 'CONFLICT';
-      }
-      if (result.code === 401 || result.code === 4008 || result.code === 4009) err.isAuthError = true;
-      if (result.code === 403) err.isPermissionError = true;
-      throw err;
-    }
-    // 写操作响应携带 dataVersion → 同步本地版本号缓存（避免轮询误判自己的操作）
-    if (result.data && result.data.dataVersion != null) {
-      Utils.storage.set('dv', result.data.dataVersion);
-    }
-    return result.data;
   },
 
   // ===== 喂养 =====
