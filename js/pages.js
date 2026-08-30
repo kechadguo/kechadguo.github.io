@@ -78,7 +78,8 @@ window.V3UI = window.V3UI || {
     if (error?.isConflict || error?.code === 'CONFLICT' || error?.httpStatus === 409) return 'conflict';
     const code = Number(error?.code || error?.status || error?.response?.code);
     if (error?.isTimeoutError) return 'timeout';
-    return code === 4003 || code === 403 ? 'permission-denied' : (error?.isNetworkError && navigator.onLine === false ? 'offline' : 'error');
+    if (error?.isNetworkError && navigator.onLine === false) return 'offline';
+    return code === 4003 || code === 403 ? 'permission-denied' : 'error';
   }
 };
 window.Pages = {

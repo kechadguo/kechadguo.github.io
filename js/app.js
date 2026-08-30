@@ -1063,7 +1063,8 @@ window.App = {
       this._feedType = '';
       Utils.showToast(' 已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message); }
+    finally { Utils.hideLoading(); }
   },
 
   // ===== 排便表单（含拍照AI） =====
@@ -2080,7 +2081,8 @@ window.App = {
       this._closeModal();
       Utils.showToast('已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message); }
+    finally { Utils.hideLoading(); }
   },
 
   // ===== 母乳瓶喂快捷输入（默认回填上次奶量，删除语音模块） =====
@@ -2106,21 +2108,27 @@ window.App = {
   },
 
   async _submitBottleBreast() {
+    if (this._feedingSubmitPending) return;
     const amount = parseInt(document.getElementById('bottle-amount')?.value);
     if (!amount || amount < 1 || amount > 500) { Utils.showToast('请输入合理奶量（1-500ml）'); return; }
     const timeInput = document.getElementById('bottle-time').value;
     const note = document.getElementById('bottle-note')?.value || '';
     const time = this._timeToISO(timeInput);
-
+    const clientRequestId = globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this._feedingSubmitPending = true;
     Utils.showLoading('保存中...');
     try {
-      await API.createFeeding({ feedingSubtype: 'bottle', milkSource: 'breast_milk', time, offeredMl: amount, consumedMl: amount, note, inputMethod: 'quick' });
+      await API.createFeeding({ feedingSubtype: 'bottle', feedingType: 'bottle', milkSource: 'breast_milk', time, occurredAt: time, offeredMl: amount, consumedMl: amount, amount, note, clientRequestId, clientEventId: clientRequestId, clientOperationId: clientRequestId, inputMethod: 'quick' });
       Utils.setLastFeedInput('bottle_breast', { amount });
-      Utils.hideLoading();
       this._closeModal();
       Utils.showToast('已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) {
+      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message);
+    } finally {
+      this._feedingSubmitPending = false;
+      Utils.hideLoading();
+    }
   },
 
   // ===== 睡眠手工记录/编辑（v73） =====

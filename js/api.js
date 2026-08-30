@@ -62,16 +62,20 @@ window.API = {
         throw err;
       }
       const result = await Promise.race([res.json(), timeoutPromise]);
-      if (result.code !== 0) {
-        const err = new Error(result.msg || '请求失败');
-        if (result.code === 404 || result.errorCode === 'FUNCTION_NOT_FOUND') { err.isFunctionNotFound = true; err.httpStatus = 404; err.code = 'FUNCTION_NOT_FOUND'; }
-        if (result.code === 409 || result.code === 'CONFLICT' || result.errorCode === 'CONFLICT') {
+      const resultCode = Number(result?.code ?? 0);
+      if (resultCode !== 0) {
+        const err = new Error(result.msg || result.message || '请求失败');
+        err.code = result.code;
+        err.errorCode = result.errorCode || null;
+        err.httpStatus = res.status;
+        if (resultCode === 404 || result.errorCode === 'FUNCTION_NOT_FOUND') { err.isFunctionNotFound = true; err.httpStatus = 404; err.code = 'FUNCTION_NOT_FOUND'; }
+        if (resultCode === 409 || result.code === 'CONFLICT' || result.errorCode === 'CONFLICT') {
           err.isConflict = true;
           err.httpStatus = 409;
           err.code = 'CONFLICT';
         }
-        if (result.code === 401 || result.code === 4008 || result.code === 4009) err.isAuthError = true;
-        if (result.code === 403) err.isPermissionError = true;
+        if (resultCode === 401 || resultCode === 4008 || resultCode === 4009) err.isAuthError = true;
+        if (resultCode === 403) err.isPermissionError = true;
         throw err;
       }
       if (result.data && result.data.dataVersion != null) Utils.storage.set('dv', result.data.dataVersion);
@@ -92,8 +96,10 @@ window.API = {
 
   // ===== 喂养 =====
   async createFeeding(record) {
+    const clientRequestId = record.clientRequestId || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const time = record.time || record.occurredAt || new Date().toISOString();
     return this.call(APP_CONFIG.functions.feeding, {
-      action: 'create', payload: { ...record, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId(), inputMethod: record.inputMethod || 'table' }
+      action: 'create', payload: { ...record, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId(), feedingType: record.feedingType || record.feedingSubtype || record.type, time, occurredAt: time, clientRequestId, clientEventId: record.clientEventId || clientRequestId, clientOperationId: record.clientOperationId || clientRequestId, inputMethod: record.inputMethod || 'table' }
     });
   },
   async createFeedingEstimate(payload) {
