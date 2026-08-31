@@ -332,8 +332,9 @@
         bubble.style.width = `${size}px`;
         bubble.style.height = `${size}px`;
         bubble.textContent = bubbleText(item.record, duration);
-        const typeName = this._typeName(item.record.feedType || item.record.type);
-        bubble.dataset.feedType = item.record.feedType || item.record.type || 'feeding';
+        const feedType = item.record.feedType || item.record.feedingSubtype || item.record.type;
+        const typeName = this._typeName(feedType, item.record.milkSource);
+      bubble.dataset.feedType = feedType || 'feeding';
         bubble.setAttribute('aria-label', `${dateLabel(item.date)} ${pad(item.date.getHours())}点${pad(item.date.getMinutes())}分，${typeName}，${duration ? `时长${duration}分钟` : '时长未记录'}`);
         this.bubbleLayer.appendChild(bubble);
         this.bubbles.push(bubble);
@@ -346,19 +347,22 @@
       tbody.innerHTML = items.map(item => {
         const r = item.record;
         const duration = Number(r.duration || r.totalDuration || r.leftDuration || 0);
-        return `<tr><td>${dateLabel(item.date)} ${pad(item.date.getHours())}:${pad(item.date.getMinutes())}</td><td>${escapeHtml(this._typeName(r.feedType || r.type))}</td><td>${duration ? `${duration}分钟` : '未记录'}</td><td>${r.volume || r.amount ? `${r.volume || r.amount}${r.unit || 'ml'}` : '-'}</td></tr>`;
+        const feedType = r.feedType || r.feedingSubtype || r.type;
+        return `<tr><td>${dateLabel(item.date)} ${pad(item.date.getHours())}:${pad(item.date.getMinutes())}</td><td>${escapeHtml(this._typeName(feedType, r.milkSource))}</td><td>${duration ? `${duration}分钟` : '未记录'}</td><td>${r.volume || r.amount ? `${r.volume || r.amount}${r.unit || 'ml'}` : '-'}</td></tr>`;
       }).join('');
     }
 
-    _typeName(type) {
-      return ({ breastfeeding: '亲喂', breast: '亲喂', breast_direct: '亲喂', bottle_breast: '母乳瓶喂', formula: '配方奶' }[type] || type || '喂养');
+    _typeName(type, milkSource) {
+      const normalized = type === 'breast_direct' ? 'breast' : type === 'bottle' ? (milkSource === 'formula' ? 'formula' : 'bottle_breast') : type;
+      return ({ breastfeeding: '亲喂', breast: '亲喂', bottle_breast: '母乳瓶喂', formula: '配方奶' }[normalized] || '喂养');
     }
     showTooltip(index, bubble, hover) {
       const item = this._validFeedings()[index];
       if (!item) return;
       const r = item.record;
       const duration = Number(r.duration || r.totalDuration || r.leftDuration || 0);
-      this.tooltip.innerHTML = `<strong>${pad(item.date.getHours())}:${pad(item.date.getMinutes())}</strong><span>${escapeHtml(this._typeName(r.feedType || r.type))}</span><span>时长：${duration ? `${duration}分钟` : '未记录'}</span>${r.volume || r.amount ? `<span>奶量：${r.volume || r.amount}${r.unit || 'ml'}</span>` : ''}${r.note ? `<hr><small>${escapeHtml(r.note)}</small>` : ''}`;
+      const feedType = r.feedType || r.feedingSubtype || r.type;
+      this.tooltip.innerHTML = `<strong>${pad(item.date.getHours())}:${pad(item.date.getMinutes())}</strong><span>${escapeHtml(this._typeName(feedType, r.milkSource))}</span><span>时长：${duration ? `${duration}分钟` : '未记录'}</span>${r.volume || r.amount ? `<span>奶量：${r.volume || r.amount}${r.unit || 'ml'}</span>` : ''}${r.note ? `<hr><small>${escapeHtml(r.note)}</small>` : ''}`;
       this.tooltip.hidden = false;
       const stageRect = this.stage.getBoundingClientRect();
       const bubbleRect = bubble.getBoundingClientRect();
@@ -370,7 +374,7 @@
       this.tooltip.style.left = `${Math.max(4, left)}px`;
       this.tooltip.style.top = `${Math.max(4, top)}px`;
       this._tooltipPinned = !hover;
-      this.container.querySelector('.feeding-chart-live').textContent = `${dateLabel(item.date)} ${pad(item.date.getHours())}:${pad(item.date.getMinutes())}，${this._typeName(r.feedType || r.type)}，${duration ? `时长${duration}分钟` : '时长未记录'}`;
+      this.container.querySelector('.feeding-chart-live').textContent = `${dateLabel(item.date)} ${pad(item.date.getHours())}:${pad(item.date.getMinutes())}，${this._typeName(feedType, r.milkSource)}，${duration ? `时长${duration}分钟` : '时长未记录'}`;
       this._emit('bubbleClick', r);
       clearTimeout(this._tooltipTimer);
     }

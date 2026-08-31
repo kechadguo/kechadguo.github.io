@@ -8695,6 +8695,19 @@ html[data-ui-version="v3"] .badge-grid { display: grid; grid-template-columns: r
 html[data-ui-version="v3"] .badge-card { min-width: 0; min-height: 96px; padding: 10px 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--v3-line); border-radius: var(--v3-radius-md); background: var(--v3-surface); color: var(--v3-ink-soft); text-align: center; }
 html[data-ui-version="v3"] .badge-card.unlocked { border-color: var(--v3-brand); background: var(--v3-brand-soft); color: var(--v3-ink); }
 html[data-ui-version="v3"] .badge-card strong, html[data-ui-version="v3"] .badge-card small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-ui-version="v3"] .feeding-time-chart { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; }
+html[data-ui-version="v3"] .feeding-chart-stage { position: relative; width: 100%; max-width: 100%; min-height: 280px; overflow: hidden; }
+html[data-ui-version="v3"] .feeding-chart-canvas, html[data-ui-version="v3"] .feeding-chart-bubbles { position: absolute; inset: 0; max-width: 100%; }
+html[data-ui-version="v3"] .feeding-chart-bubbles { pointer-events: none; }
+html[data-ui-version="v3"] .feeding-chart-bubbles .chart-bubble { pointer-events: auto; }
+html[data-ui-version="v3"] .feeding-chart-tooltip { max-width: min(210px, calc(100% - 8px)); overflow-wrap: anywhere; }
+html[data-ui-version="v3"] .feeding-chart-weekbar { display:flex; align-items:center; gap:6px; min-width:0; }
+html[data-ui-version="v3"] .feeding-week-label { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-ui-version="v3"] .feeding-chart-stat-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+html[data-ui-version="v3"] .feeding-chart-stat { min-width:0; overflow:hidden; }
+html[data-ui-version="v3"] .feeding-chart-stat strong, html[data-ui-version="v3"] .feeding-chart-stat small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-ui-version="v3"] .feeding-chart-sr-table { width:100%; table-layout:fixed; }
+html[data-ui-version="v3"] .feeding-chart-sr-table th, html[data-ui-version="v3"] .feeding-chart-sr-table td { overflow-wrap:anywhere; }
 @media (max-width: 380px) { html[data-ui-version="v3"] #content { padding-left: 12px; padding-right: 12px; } html[data-ui-version="v3"] .badge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* R23 message center components */

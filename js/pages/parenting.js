@@ -228,7 +228,7 @@ window.ParentingPage = {
     const records = summary?.records || [];
     const lastFeed = records[0];
     const feedType = record => record.feedingSubtype || record.type || '';
-    const feedLabel = record => this._feedLabel(feedType(record));
+    const feedLabel = record => this._feedLabel(feedType(record), record.milkSource);
     let lastFeedHTML = '';
     if (lastFeed) {
       lastFeedHTML = `
@@ -247,7 +247,7 @@ window.ParentingPage = {
       <div class="dash-stat-row dash-stat-row-lg">
         <div class="dash-stat-lg"><div class="ds-icon">${Lucide.icon('bottle', 20)}</div><div class="ds-value" style="color:var(--primary)">${todayMilk}</div><div class="ds-label">今日奶量(ml)</div></div>
         <div class="dash-stat-lg"><div class="ds-icon">${Lucide.icon('bar-chart', 20)}</div><div class="ds-value">${feedCount}</div><div class="ds-label">喂养次数</div></div>
-        <div class="dash-stat-lg"><div class="ds-icon">${Lucide.icon('heart-pulse', 20)}</div><div class="ds-value">${(records.filter(r => r.type === 'breast')).length}</div><div class="ds-label">亲喂次数</div></div>
+        <div class="dash-stat-lg"><div class="ds-icon">${Lucide.icon('heart-pulse', 20)}</div><div class="ds-value">${(records.filter(r => (r.feedingSubtype || r.type) === 'breast_direct' || r.type === 'breast')).length}</div><div class="ds-label">亲喂次数</div></div>
       </div>
 
       <!-- 本月喂养知识（折叠卡，汇总栏下方，v83 顺序） -->
@@ -341,13 +341,13 @@ window.ParentingPage = {
         weekStart: startDate,
         feedings: feedingRange.records || [],
         showWeekNavigation: false,
-        onEdit: record => { if (window.BreastFeeding && record.type === 'breast') BreastFeeding.openForm(record); }
+        onEdit: record => { if (window.BreastFeeding && ((record.feedingSubtype || record.type) === 'breast_direct' || record.type === 'breast')) BreastFeeding.openForm(record); }
       });
     }
     } catch (e) {
       el.innerHTML = Utils.emptyState({
         icon: Lucide.icon('bottle', 32), title: '加载喂养数据失败',
-        desc: Utils.escapeHtml(e.message),
+        desc: e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请稍后重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请稍后重试' : '请稍后重试',
         action: '<button class="btn btn-primary" onclick="ParentingPage.switchSub(\'feeding\')">重试</button>',
         error: true
       });
