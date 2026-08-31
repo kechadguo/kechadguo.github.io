@@ -8684,6 +8684,13 @@ html[data-ui-version="v3"] #tab-bar {
   padding: var(--v3-space-2) var(--v3-space-2) env(safe-area-inset-bottom, 0px); box-sizing: border-box;
   background: var(--v3-surface); border-top: 1px solid var(--v3-line);
 }
+html[data-ui-version="v3"] .dash-stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+html[data-ui-version="v3"] .dash-stat { min-width: 0; overflow: hidden; padding-left: 4px; padding-right: 4px; }
+html[data-ui-version="v3"] .dash-stat .ds-icon, html[data-ui-version="v3"] .dash-stat .ds-value, html[data-ui-version="v3"] .dash-stat .ds-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-ui-version="v3"] .baby-info-card, html[data-ui-version="v3"] .bi-row, html[data-ui-version="v3"] .bi-growth { min-width: 0; max-width: 100%; box-sizing: border-box; }
+html[data-ui-version="v3"] .bi-growth { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+html[data-ui-version="v3"] .growth-tag { min-width: 0; overflow: hidden; }
+html[data-ui-version="v3"] .growth-tag .gt-label, html[data-ui-version="v3"] .growth-tag .gt-value, html[data-ui-version="v3"] .growth-tag .gt-time { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 html[data-ui-version="v3"] .ms-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
 html[data-ui-version="v3"] .ms-tab { min-height: 44px; border: 1px solid var(--v3-line); border-radius: var(--v3-radius-md); background: var(--v3-surface); color: var(--v3-ink-soft); font-weight: 700; }
 html[data-ui-version="v3"] .ms-tab.active { background: var(--v3-brand-soft); color: var(--v3-brand-strong); border-color: var(--v3-brand); }
