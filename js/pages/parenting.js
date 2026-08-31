@@ -58,7 +58,7 @@ window.ParentingPage = {
       Utils.showToast('已删除');
       await this._renderSub(); // 重新拉取云端最新数据
     } catch (e) {
-      Utils.showToast('删除失败: ' + (e.message || '请稍后重试'));
+      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '删除失败，请稍后重试');
     }
   },
 

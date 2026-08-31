@@ -40,6 +40,12 @@ window.API = {
         signal: controller ? controller.signal : undefined
       }), timeoutPromise]);
       // 区分 HTTP 状态码
+      if (res.status === 400) {
+        const err = new Error('服务处理失败，请稍后重试');
+        err.httpStatus = 400;
+        err.code = 'BAD_REQUEST';
+        throw err;
+      }
       if (res.status === 404) {
         const err = new Error('服务暂未部署');
         err.isFunctionNotFound = true;
@@ -185,7 +191,8 @@ window.API = {
     });
   },
   async deleteFeeding(recordId) {
-    return API.call(APP_CONFIG.functions.feeding, { action: 'delete', payload: { recordId, memberId: Auth.getMemberId() } });
+    const clientRequestId = globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-delete-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return this.call(APP_CONFIG.functions.feeding, { action: 'delete', payload: { recordId, familyId: Auth.getFamilyId(), babyId: Auth.getBabyId(), memberId: Auth.getMemberId(), clientRequestId, clientEventId: clientRequestId, clientOperationId: clientRequestId } });
   },
   async restoreFeeding(recordId) {
     return this.call(APP_CONFIG.functions.feeding, { action: 'restore', payload: { recordId, familyId: Auth.getFamilyId(), memberId: Auth.getMemberId(), babyId: Auth.getBabyId() } });

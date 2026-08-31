@@ -292,7 +292,7 @@ window.App = {
         Utils.hideLoading();
         Utils.showToast(` 睡眠 ${Utils.formatDuration(duration)} 已保存`);
         this._refreshCurrent();
-      } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+      } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
     } else {
       // 开始睡眠
       const now = new Date();
@@ -378,7 +378,7 @@ window.App = {
       this._closeModal();
       Utils.showToast('已添加');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   async toggleTodo(recordId, currentCompleted) {
@@ -401,7 +401,7 @@ window.App = {
       await API.deleteTodo(recordId);
       Utils.showToast('已删除');
       this._refreshCurrent();
-    } catch (e) { Utils.showToast('删除失败: ' + e.message); }
+    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '删除失败，请稍后重试'); }
   },
 
   // ===== 管理员：营养/护理管理 =====
@@ -579,7 +579,9 @@ window.App = {
       await API.deleteTodo(todoId);
       Utils.showToast('已删除');
       ReportPage.selectDay(dateStr); // 刷新日历详情
-    } catch (e) { Utils.showToast('删除失败: ' + e.message); }
+    } catch (e) {
+      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '删除失败，请稍后重试');
+    }
   },
 
   async _toggleDateTodo(todoId, dateStr, currentCompleted) {
@@ -683,7 +685,7 @@ window.App = {
       this._closeModal();
       Utils.showToast(' 已记录');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 日历添加里程碑 =====
@@ -696,7 +698,7 @@ window.App = {
       Utils.hideLoading();
       Utils.showToast(' 已记录');
       document.getElementById('cal-ms-input').value = '';
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 主题颜色 =====
@@ -1079,7 +1081,7 @@ window.App = {
       else if (e.isFunctionNotFound) Utils.showToast('服务暂未部署');
       else if (e.isNetworkError) Utils.showToast('网络连接失败，请重试');
       else if (e.code === 'INCOMPLETE_WRITE_CONFIRMATION') Utils.showToast('服务端未确认写入，请勿重复提交');
-      else Utils.showToast('保存失败: ' + e.message);
+      else Utils.showToast('保存失败，请稍后重试');
     } finally {
       this._feedingSubmitPending = false;
       Utils.hideLoading();
@@ -1273,7 +1275,7 @@ window.App = {
       this._stoolColor = ''; this._stoolConsistency = ''; this._stoolAmount = '';
       Utils.showToast(' 已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 小便/尿不湿快捷记录 =====
@@ -1287,7 +1289,7 @@ window.App = {
       Utils.hideLoading();
       Utils.showToast(' 已记录' + (type === 'urine' ? '小便' : '换尿不湿'));
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 体温表单 =====
@@ -1320,7 +1322,7 @@ window.App = {
       this._closeModal();
       Utils.showToast(` 已记录 ${temp}°C (${status.label})`);
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 成长记录表单 =====
@@ -1352,7 +1354,7 @@ window.App = {
       this._closeModal();
       Utils.showToast(' 已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 营养打卡 =====
@@ -1396,7 +1398,7 @@ window.App = {
       this._closeModal();
       Utils.showToast(' 已记录');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败，请稍后重试'); }
   },
 
   // ===== 报表 =====
@@ -2086,22 +2088,26 @@ window.App = {
   },
 
   async _submitFormula() {
+    if (this._feedingSubmitPending) return;
     const amount = parseInt(document.getElementById('formula-amount')?.value);
     if (!amount || amount < 1 || amount > 500) { Utils.showToast('请输入合理奶量（1-500ml）'); return; }
     const timeInput = document.getElementById('formula-time').value;
     const note = document.getElementById('formula-note')?.value || '';
     const time = this._timeToISO(timeInput);
 
+    this._feedingSubmitPending = true;
     Utils.showLoading('保存中...');
     try {
       await API.createFeeding({ feedingSubtype: 'bottle', milkSource: 'formula', time, offeredMl: amount, consumedMl: amount, note, inputMethod: 'quick' });
       Utils.setLastFeedInput('formula', { amount });
-      Utils.hideLoading();
       this._closeModal();
       Utils.showToast('已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message); }
-    finally { Utils.hideLoading(); }
+    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败，请稍后重试'); }
+    finally {
+      this._feedingSubmitPending = false;
+      Utils.hideLoading();
+    }
   },
 
   // ===== 母乳瓶喂快捷输入（默认回填上次奶量，删除语音模块） =====
@@ -2144,7 +2150,7 @@ window.App = {
       Utils.showToast('已保存');
       this._refreshCurrent();
     } catch (e) {
-      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message);
+      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败，请稍后重试');
     } finally {
       this._feedingSubmitPending = false;
       Utils.hideLoading();
@@ -2247,20 +2253,25 @@ window.App = {
   },
 
   async _submitSolids() {
+    if (this._feedingSubmitPending) return;
     const amount = parseInt(document.getElementById('solids-amount')?.value);
     if (!amount || amount < 1 || amount > 500) { Utils.showToast('请输入合理量（1-500g）'); return; }
     const timeInput = document.getElementById('solids-time').value;
     const note = document.getElementById('solids-note')?.value || '';
     const time = this._timeToISO(timeInput);
 
+    this._feedingSubmitPending = true;
     Utils.showLoading('保存中...');
     try {
       await API.createFeeding({ feedingSubtype: 'solids', time, amount, unit: 'g', note, inputMethod: 'quick' });
-      Utils.hideLoading();
       this._closeModal();
       Utils.showToast('已保存');
       this._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败: ' + e.message); }
+    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败，请稍后重试'); }
+    finally {
+      this._feedingSubmitPending = false;
+      Utils.hideLoading();
+    }
   },
 
   // ===== Tab图标自定义 =====
@@ -2285,10 +2296,10 @@ window.App = {
       await API.deleteMilestone(recordId);
       Utils.showToast('已删除');
       showPage('milestone');
-    } catch (e) { Utils.showToast('删除失败: ' + e.message); }
+    } catch (e) { Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '删除失败，请稍后重试'); }
   },
 
-  // ===== 工具方法 =====
+  // ===== 工具方法
   _refreshCurrent() {
     const tab = Pages.currentTab;
     if (tab === 'dashboard') showPage('dashboard');

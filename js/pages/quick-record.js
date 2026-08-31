@@ -297,7 +297,7 @@ window.QuickRecordPage = {
       showPage('dashboard');
     } catch (e) {
       Utils.hideLoading();
-      Utils.showToast('保存失败: ' + e.message);
+      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败，请稍后重试');
     }
   },
 

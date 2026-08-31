@@ -82,11 +82,11 @@ window.BreastFeeding = {
         try {
           await API.createFeedingEstimate({ directEventId: directResult.eventId, directSourceRecordId: directResult.recordId, directSourceEventId: directResult.eventId, relationId: directResult.eventId, episodeId: directResult.eventId, occurredAt: data.time, range: { min: Math.round(estimateAmount * 0.8), max: Math.round(estimateAmount * 1.2) }, confidence: this._manualAmount ? 'USER_ADJUSTED' : 'LOW', evidence: this._manualAmount ? ['manual_adjustment'] : [], sourceEventIds: [directResult.eventId], algorithmVersion: 'r23-estimate-1' });
         } catch (estimateError) {
-          Utils.hideLoading(); App._closeModal(); Utils.showToast('亲喂已保存，估算保存失败：' + estimateError.message); App._refreshCurrent(); return;
+          Utils.hideLoading(); App._closeModal(); Utils.showToast('亲喂已保存，估算暂不可用，请稍后重试'); App._refreshCurrent(); return;
         }
       }
       Utils.hideLoading(); App._closeModal(); Utils.showToast('亲喂记录已保存'); App._refreshCurrent();
-    } catch (e) { Utils.hideLoading(); Utils.showToast('保存失败：' + e.message); }
+    } catch (e) { Utils.hideLoading(); Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败，请稍后重试'); }
   },
   showEstimateInfo() { if (this.settings().estimateMethod === 'off') return; App._showModal('估算说明', `<p>当前估算值：<strong>~${this._manualAmount || this._estimate?.amount || 0}ml</strong></p><p class="text-muted">估算方式：${this._estimate?.method === 'pump' ? '吸奶测试参考值' : '月龄标准'}。实际奶量可能存在约20-30%差异，仅作记录参考。</p>`); },
   async quick() { this.openForm(); },
