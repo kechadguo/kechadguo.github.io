@@ -227,13 +227,15 @@ window.ParentingPage = {
     // 上次喂养信息
     const records = summary?.records || [];
     const lastFeed = records[0];
+    const feedType = record => record.feedingSubtype || record.type || '';
+    const feedLabel = record => this._feedLabel(feedType(record));
     let lastFeedHTML = '';
     if (lastFeed) {
       lastFeedHTML = `
         <div class="card">
           <div class="card-title">${Lucide.icon('timer', 18)} 上次喂养</div>
           <div class="card-row"><span class="card-label">时间</span><span class="card-value">${Utils.timeAgo(lastFeed.time)}</span></div>
-          <div class="card-row"><span class="card-label">类型</span><span class="card-value">${this._feedLabel(lastFeed.type)}</span></div>
+          <div class="card-row"><span class="card-label">类型</span><span class="card-value">${this._feedLabel(lastFeed.feedingSubtype || lastFeed.type, lastFeed.milkSource)}</span></div>
           <div class="card-row"><span class="card-label">量</span><span class="card-value">${lastFeed.amount ? lastFeed.amount + (lastFeed.unit || 'ml') : '按需'}</span></div>
           ${lastFeed.note ? `<div class="card-row"><span class="card-label">备注</span><span class="card-value">${Utils.escapeHtml(lastFeed.note)}</span></div>` : ''}
         </div>
@@ -298,17 +300,19 @@ window.ParentingPage = {
       <div class="card">
         <div class="card-title">${Lucide.icon('clipboard-list', 18)} 今日明细</div>
         ${records.map(r => {
+          const type = feedType(r);
+          const isBreast = type === 'breast_direct' || type === 'breast';
           let detail = '';
-          if (r.type === 'breast') {
+          if (isBreast) {
             detail = `${r.isEstimated ? '~' : ''}${r.amount || '按需'}${r.amount ? (r.unit || 'ml') : ''}${r.isManualAdjusted ? '*' : ''}`;
-          } else if (r.amount) {
-            detail = r.amount + r.unit;
+          } else if (r.amount || r.consumedMl) {
+            detail = (r.consumedMl || r.amount) + (r.unit || 'ml');
           }
           return `
-          <div class="record-item" ${r.type === 'breast' && r._id ? `onclick="BreastFeeding.openForm(${JSON.stringify(r).replace(/"/g, '&quot;')})" style="cursor:pointer"` : ''}>
+          <div class="record-item" ${isBreast && r._id ? `onclick="BreastFeeding.openForm(${JSON.stringify(r).replace(/"/g, '&quot;')})" style="cursor:pointer"` : ''}>
             <div class="record-main">
-              <div class="record-title">${this._feedLabel(r.type)} ${detail} ${r.type === 'breast' && r.isEstimated ? '<span class="text-muted" title="亲喂奶量为估算值">ⓘ</span>' : ''}</div>
-              <div class="record-meta">${Utils.formatTime(r.time)}${r.type === 'breast' && r.side ? ' · ' + (BreastFeeding?.sideLabels?.[r.side] || r.side) : ''}${r.type === 'breast' && r.duration ? ' · ' + (BreastFeeding?.durationLabels?.[r.duration] || r.duration) : ''}${r.isBackfill ? ' · 补记' : ''} ${r.note ? '· ' + Utils.escapeHtml(r.note) : ''}</div>
+              <div class="record-title">${feedLabel(r)} ${detail} ${isBreast && r.isEstimated ? '<span class="text-muted" title="亲喂奶量为估算值">ⓘ</span>' : ''}</div>
+              <div class="record-meta">${Utils.formatTime(r.time || r.occurredAt)}${isBreast && r.side ? ' · ' + (BreastFeeding?.sideLabels?.[r.side] || r.side) : ''}${isBreast && r.duration ? ' · ' + (BreastFeeding?.durationLabels?.[r.duration] || r.duration) : ''}${r.isBackfill ? ' · 补记' : ''} ${r.note ? '· ' + Utils.escapeHtml(r.note) : ''}</div>
             </div>
             ${this._delBtn('feeding', r, 'recorderMemberId')}
           </div>
@@ -350,9 +354,10 @@ window.ParentingPage = {
     }
   },
 
-  _feedLabel(type) {
-    const t = APP_CONFIG.feedingTypes.find(f => f.value === type);
-    return t ? `${Lucide.icon(t.icon || 'circle-dot', 16)} ${t.label}` : type;
+  _feedLabel(type, milkSource) {
+    const normalized = type === 'breast_direct' ? 'breast' : type === 'bottle' ? (milkSource === 'formula' ? 'formula' : 'bottle_breast') : type;
+    const t = APP_CONFIG.feedingTypes.find(f => f.value === normalized);
+    return t ? `${Lucide.icon(t.icon || 'circle-dot', 16)} ${t.label}` : '其他喂养';
   },
 
   // ===== 排便 =====

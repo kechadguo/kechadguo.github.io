@@ -809,11 +809,18 @@ body {
 }
 
 .record-main {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .record-title {
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.record-meta {
+  overflow-wrap: anywhere;
 }
 
 .record-actions {
