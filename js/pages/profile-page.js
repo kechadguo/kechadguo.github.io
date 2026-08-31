@@ -5,6 +5,7 @@ window.ProfilePage = {
   insurances: [],
   insurancePageOpen: false,
   currentInsuranceId: '',
+  inventory: { batches: [], transactions: [], loaded: false },
 
   async render(container) {
     try {
@@ -52,6 +53,8 @@ window.ProfilePage = {
       </div>
 
       <div class="card feeding-settings-card"><div class="collapse-header" id="collapse-breast-feeding-header" onclick="ProfilePage._toggleCollapse('collapse-breast-feeding')"><div><div style="font-weight:600">${Lucide.icon('heart-pulse', 17)} 喂养设置</div><div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">亲喂记录与奶量估算</div></div><span class="collapse-arrow">▶</span></div><div class="collapse-body" id="collapse-breast-feeding-body"><div class="breast-settings-inner"><label>估算方式<select class="form-input" onchange="ProfilePage._setBreastEstimateMethod(this.value)"><option value="standard" ${BreastFeeding?.settings?.().estimateMethod !== 'pump' ? 'selected' : ''}>基于月龄标准</option><option value="pump" ${BreastFeeding?.settings?.().estimateMethod === 'pump' ? 'selected' : ''}>基于吸奶参考值</option></select></label><label><input type="checkbox" checked onchange="ProfilePage._setBreastSetting('showDuration', this.checked)"> 默认显示喂养时长</label><label><input type="checkbox" checked onchange="ProfilePage._setBreastSetting('showSide', this.checked)"> 默认显示喂养部位</label><button class="btn btn-outline btn-block" onclick="BreastFeeding.openPumpManager()">管理吸奶测试数据</button><p class="text-muted">亲喂奶量为参考估算值，实际可能存在约20-30%差异。</p></div></div></div>
+
+      <section class="card inventory-management-card" aria-labelledby="inventory-management-title"><div class="card-title" id="inventory-management-title">${Lucide.icon('archive', 17)} 存奶管理</div><div id="profile-inventory-content"><div class="empty-state-sm">存奶数据加载中…</div></div></section>
 
       <!-- 家庭管理（折叠） — v96 需求 #1：默认折叠（含 v2） -->
       <div class="card">
@@ -246,6 +249,7 @@ window.ProfilePage = {
     this._loadFamilyInfoAsync();
     this._loadBadgeCountAsync();
     this._loadLatestCheckupAsync();
+    this._loadInventoryAsync();
     } catch (e) {
       container.innerHTML = `<div class="empty-state"><div class="empty-icon">${Lucide.icon('settings', 32)}</div><p>加载设置失败</p><p class="text-muted" style="font-size:12px">${Utils.escapeHtml(e.message)}</p><button class="btn btn-primary mt-16" onclick="showPage('profile')">重试</button></div>`;
     }
@@ -383,15 +387,16 @@ window.ProfilePage = {
   },
 
   _getInsuranceStatus(ins) {
-    if (!ins.endDate) return { text: '有效', className: 'active', icon: '' };
+    if (!ins.endDate) return { text: '有效', className: 'active', icon: Lucide.icon('shield-check', 14) };
     const days = this._calcDaysUntilExpire(ins.endDate);
-    if (days < 0) return { text: '已过期', className: 'expired', icon: '' };
-    if (days <= 60) return { text: `${days}天后到期`, className: 'expiring', icon: '' };
-    return { text: '有效', className: 'active', icon: '' };
+    if (days < 0) return { text: '已过期', className: 'expired', icon: Lucide.icon('alert-triangle', 14) };
+    if (days <= 60) return { text: `${days}天后到期`, className: 'expiring', icon: Lucide.icon('clock', 14) };
+    return { text: '有效', className: 'active', icon: Lucide.icon('shield-check', 14) };
   },
 
   _getCategoryIcon(category) {
-    return ({ '社保医保': '', '重疾险': '', '医疗险': '', '意外险': '', '教育金': '', '其他': '' }[category] || '');
+    const icons = { '社保医保': 'shield-check', '重疾险': 'heart-pulse', '医疗险': 'cross', '意外险': 'umbrella', '教育金': 'graduation-cap', '其他': 'file-text' };
+    return Lucide.icon(icons[category] || 'file-text', 16);
   },
 
   openInsuranceManagement() { this.showInsurancePage(); },
@@ -425,7 +430,7 @@ window.ProfilePage = {
     return `<article class="insurance-item"><div class="item-header"><div class="item-name">${Utils.escapeHtml(ins.name || '')}</div><div class="item-status ${status.className}">${status.icon} ${status.text}</div></div><div class="item-info"><div class="info-line"><span class="info-label">保险公司</span><span class="info-value">${Utils.escapeHtml(ins.company || '')}</span></div>${ins.policyNumber ? `<div class="info-line"><span class="info-label">保单号</span><span class="info-value">${Utils.escapeHtml(ins.policyNumber)}</span></div>` : ''}<div class="info-line"><span class="info-label">保障期限</span><span class="info-value">${Utils.escapeHtml(ins.startDate || '')} 至 ${ins.endDate ? Utils.escapeHtml(ins.endDate) : '终身'}</span></div>${ins.coverage ? `<div class="info-line highlight"><span class="info-label">保额</span><span class="info-value strong">${Utils.escapeHtml(ins.coverage)}</span></div>` : ''}${ins.premium != null ? `<div class="info-line"><span class="info-label">保费</span><span class="info-value">${Utils.escapeHtml(ins.premium)}元 / ${Utils.escapeHtml(ins.paymentFreq || '年')}</span></div>` : ''}${ins.note ? `<div class="info-line full"><span class="info-label">备注</span><span class="info-value">${Utils.escapeHtml(ins.note)}</span></div>` : ''}</div>${days > 0 && days <= 60 ? `<div class="item-alert"> ${days}天后到期，请及时续保</div>` : ''}<div class="item-actions"><button class="action-btn" onclick="event.stopPropagation();ProfilePage.editInsurance('${Utils.jsAttr(ins._id)}')">编辑</button><button class="action-btn danger" onclick="event.stopPropagation();ProfilePage.deleteInsurance('${Utils.jsAttr(ins._id)}')">删除</button></div></article>`;
   },
 
-  _insuranceCategories() { return [{ value: '社保医保', icon: '', desc: '城乡居民医保' }, { value: '重疾险', icon: '', desc: '重大疾病保险' }, { value: '医疗险', icon: '', desc: '百万医疗' }, { value: '意外险', icon: '', desc: '意外伤害' }, { value: '教育金', icon: '', desc: '教育年金' }, { value: '其他', icon: '', desc: '其他保险' }]; },
+  _insuranceCategories() { return [{ value: '社保医保', icon: Lucide.icon('shield-check', 18), desc: '城乡居民医保' }, { value: '重疾险', icon: Lucide.icon('heart-pulse', 18), desc: '重大疾病保险' }, { value: '医疗险', icon: Lucide.icon('cross', 18), desc: '百万医疗' }, { value: '意外险', icon: Lucide.icon('umbrella', 18), desc: '意外伤害' }, { value: '教育金', icon: Lucide.icon('graduation-cap', 18), desc: '教育年金' }, { value: '其他', icon: Lucide.icon('file-text', 18), desc: '其他保险' }]; },
   _getCommonInsurances(category) { return ({ '社保医保': ['城乡居民医保', '少儿医保', '新生儿医保'], '重疾险': ['妈咪保贝', '大黄蜂', '青云卫', '小淘气', '慧馨安'], '医疗险': ['平安e生保', '好医保', '尊享e生', '小医仙', '门诊险'], '意外险': ['小神童', '小顽童', '大保镖', '萌宝保'], '教育金': ['年金险', '增额终身寿', '教育储蓄'], '其他': [] }[category] || []); },
 
   addInsurance(presetCategory = '', record = null) {
@@ -435,7 +440,7 @@ window.ProfilePage = {
     const categories = this._insuranceCategories();
     const common = this._getCommonInsurances(this.currentCategory);
     const value = (key, fallback = '') => Utils.escapeHtml(record?.[key] == null ? fallback : record[key]);
-    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay insurance-modal-overlay" id="insuranceModal" onclick="if(event.target===this)this.remove()"><div class="modal-content insurance-modal" onclick="event.stopPropagation()"><div class="modal-header"><h3>${record ? '编辑保险' : '添加保险'}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div><div class="modal-body"><div class="form-section"><label class="form-label required">保险类型</label><div class="category-grid" id="insuranceCategoryGrid">${categories.map(c => `<button type="button" class="category-card ${this.currentCategory === c.value ? 'selected' : ''}" data-category="${c.value}" onclick="ProfilePage.selectInsuranceCategory('${c.value}')"><span class="category-card-icon">${c.icon}</span><span class="category-card-name">${c.value}</span><span class="category-card-desc">${c.desc}</span></button>`).join('')}</div></div><div class="form-section"><label class="form-label required">保险名称</label><div class="quick-buttons" id="insuranceNameQuick">${common.map(n => `<button type="button" class="quick-btn" onclick="ProfilePage.selectInsuranceName('${n}')">${n}</button>`).join('')}</div><input id="insuranceName" class="form-input" value="${value('name')}" placeholder="或手动输入保险名称"></div><div class="form-section"><label class="form-label required">保险公司</label><div id="insuranceCompanyQuick" class="quick-buttons"></div><input id="insuranceCompany" class="form-input" value="${value('company')}" placeholder="输入保险公司名称"></div><div class="form-section"><label class="form-label">保单号</label><input id="insurancePolicyNumber" class="form-input" value="${value('policyNumber')}" placeholder="可选"></div><div class="form-divider">保障信息</div><div class="form-row"><label class="form-col form-label required">生效日期<input type="date" id="insuranceStartDate" class="form-input" value="${value('startDate', today)}"></label><label class="form-col form-label">到期日期<input type="date" id="insuranceEndDate" class="form-input" value="${value('endDate')}"><span class="lifetime-label"><input type="checkbox" id="insuranceLifetime" ${record && !record.endDate ? 'checked' : ''} onchange="ProfilePage.toggleInsuranceLifetime(this)"> 终身</span></label></div><div class="form-section" id="insuranceCoverageSection"><label class="form-label">保额（万元）</label><div class="coverage-options">${[10, 30, 50, 100, 300].map(n => `<button type="button" class="coverage-option" onclick="ProfilePage.selectInsuranceCoverage('${n}')">${n}万</button>`).join('')}</div><input type="number" id="insuranceCoverage" class="form-input" value="${value('coverageAmount', String(record?.coverage || '').replace(/[^0-9.]/g, ''))}" placeholder="或输入金额"></div><div class="form-row"><label class="form-col form-label">保费<input type="number" id="insurancePremium" class="form-input" value="${value('premium')}" placeholder="金额（元）"></label><label class="form-col form-label">缴费周期<select id="insurancePaymentFreq" class="form-input">${['年','月','季','一次性'].map(x => `<option ${x === (record?.paymentFreq || '年') ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div><div class="form-section"><label class="form-label">备注</label><textarea id="insuranceNote" class="form-textarea" rows="3" placeholder="保障范围、特殊条款等">${value('note')}</textarea></div></div><div class="modal-footer"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="ProfilePage.saveInsurance()">保存</button></div></div></div>`);
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay insurance-modal-overlay" id="insuranceModal" onclick="if(event.target===this)this.remove()"><div class="modal-content insurance-modal" onclick="event.stopPropagation()"><div class="modal-header"><h3>${record ? '编辑保险' : '添加保险'}</h3><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button></div><div class="modal-body"><div class="form-section"><label class="form-label required">保险类型</label><div class="category-grid" id="insuranceCategoryGrid">${categories.map(c => `<button type="button" class="category-card ${this.currentCategory === c.value ? 'selected' : ''}" data-category="${c.value}" onclick="ProfilePage.selectInsuranceCategory('${c.value}')"><span class="category-card-icon">${c.icon || Lucide.icon('file-text', 18)}</span><span class="category-card-name">${c.value}</span><span class="category-card-desc">${c.desc}</span></button>`).join('')}</div></div><div class="form-section"><label class="form-label required">保险名称</label><div class="quick-buttons" id="insuranceNameQuick">${common.map(n => `<button type="button" class="quick-btn" onclick="ProfilePage.selectInsuranceName('${n}')">${n}</button>`).join('')}</div><input id="insuranceName" class="form-input" value="${value('name')}" placeholder="或手动输入保险名称"></div><div class="form-section"><label class="form-label required">保险公司</label><div id="insuranceCompanyQuick" class="quick-buttons"></div><input id="insuranceCompany" class="form-input" value="${value('company')}" placeholder="输入保险公司名称"></div><div class="form-section"><label class="form-label">保单号</label><input id="insurancePolicyNumber" class="form-input" value="${value('policyNumber')}" placeholder="可选"></div><div class="form-divider">保障信息</div><div class="form-row"><label class="form-col form-label required">生效日期<input type="date" id="insuranceStartDate" class="form-input" value="${value('startDate', today)}"></label><label class="form-col form-label">到期日期<input type="date" id="insuranceEndDate" class="form-input" value="${value('endDate')}"><span class="lifetime-label"><input type="checkbox" id="insuranceLifetime" ${record && !record.endDate ? 'checked' : ''} onchange="ProfilePage.toggleInsuranceLifetime(this)"> 终身</span></label></div><div class="form-section" id="insuranceCoverageSection"><label class="form-label">保额（万元）</label><div class="coverage-options">${[10, 30, 50, 100, 300].map(n => `<button type="button" class="coverage-option" onclick="ProfilePage.selectInsuranceCoverage('${n}')">${n}万</button>`).join('')}</div><input type="number" id="insuranceCoverage" class="form-input" value="${value('coverageAmount', String(record?.coverage || '').replace(/[^0-9.]/g, ''))}" placeholder="或输入金额"></div><div class="form-row"><label class="form-col form-label">保费<input type="number" id="insurancePremium" class="form-input" value="${value('premium')}" placeholder="金额（元）"></label><label class="form-col form-label">缴费周期<select id="insurancePaymentFreq" class="form-input">${['年','月','季','一次性'].map(x => `<option ${x === (record?.paymentFreq || '年') ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div><div class="form-section"><label class="form-label">备注</label><textarea id="insuranceNote" class="form-textarea" rows="3" placeholder="保障范围、特殊条款等">${value('note')}</textarea></div></div><div class="modal-footer"><button class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="ProfilePage.saveInsurance()">保存</button></div></div></div>`);
     this._loadInsuranceCompanyHistory();
     if (this.currentCategory) this.selectInsuranceCategory(this.currentCategory);
   },
@@ -469,6 +474,87 @@ window.ProfilePage = {
   async deleteInsurance(id) { if (!confirm('确定删除这条保险记录吗？')) return; try { await API.deleteInsurance(id); Utils.showToast('删除成功'); await this.loadInsurances(); this.refreshInsurancePage(); } catch (e) { Utils.showToast('删除失败：' + (e.message || '请稍后重试')); } },
   refreshInsurancePage() { const el = document.getElementById('insuranceContent'); if (el) el.innerHTML = this._renderInsuranceContent(); },
   closeInsurancePage() { document.getElementById('insurancePage')?.remove(); this.insurancePageOpen = false; showPage('profile'); },
+
+  async _loadInventoryAsync() {
+    const el = document.getElementById('profile-inventory-content');
+    if (!el || !API.listInventoryBatches || !API.listInventoryTransactions) return;
+    try {
+      const [batchResult, transactionResult] = await Promise.all([API.listInventoryBatches(), API.listInventoryTransactions()]);
+      this.inventory = { batches: batchResult?.records || [], transactions: transactionResult?.records || [], loaded: true };
+      if (document.getElementById('profile-inventory-content')) this._renderInventorySummary();
+    } catch (error) {
+      this.inventory = { batches: [], transactions: [], loaded: true };
+      el.innerHTML = '<div class="empty-state-sm">存奶数据暂不可用，请稍后重试</div>';
+    }
+  },
+
+  _renderInventorySummary() {
+    const el = document.getElementById('profile-inventory-content');
+    if (!el) return;
+    const batches = this.inventory.batches || [];
+    const transactions = this.inventory.transactions || [];
+    const availableMl = batches.reduce((sum, batch) => sum + Number(batch.availableMl || 0), 0);
+    const activeBatches = batches.filter(batch => batch.status !== 'DEPLETED' && Number(batch.availableMl || 0) > 0);
+    const rows = activeBatches.slice(0, 5).map(batch => `<div class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(batch.storageLocation || '存奶批次')}</strong><div class="record-meta">可用 ${Number(batch.availableMl || 0)} ml${batch.expiresAt ? ` · 到期 ${Utils.escapeHtml(String(batch.expiresAt).slice(0, 10))}` : ''}</div></div></div>`).join('');
+    el.innerHTML = `<div class="inventory-summary-grid"><div><strong>${availableMl}</strong><span>当前存奶(ml)</span></div><div><strong>${activeBatches.length}</strong><span>可用批次</span></div><div><strong>${transactions.length}</strong><span>交易记录</span></div></div>${rows || '<div class="empty-state-sm">暂无可用存奶</div>'}<div class="inventory-actions"><button class="btn btn-primary btn-sm" type="button" onclick="ProfilePage.openInventoryBatchForm()">${Lucide.icon('plus', 14)} 新增存奶</button><button class="btn btn-outline btn-sm" type="button" onclick="ProfilePage.openInventoryDetails()">查看明细</button></div>`;
+  },
+
+  openInventoryBatchForm() {
+    App._showModal('新增存奶', `<div class="form-group"><label>奶量(ml)<input id="inventory-quantity" class="form-input" type="number" min="1" step="1"></label></div><div class="form-group"><label>存放位置<input id="inventory-location" class="form-input" placeholder="如：冷藏室"></label></div><div class="form-group"><label>到期时间<input id="inventory-expires" class="form-input" type="datetime-local"></label></div><button class="btn btn-primary btn-block" type="button" onclick="ProfilePage._submitInventoryBatch()">保存存奶</button>`);
+  },
+
+  async _submitInventoryBatch() {
+    const quantityMl = Number(document.getElementById('inventory-quantity')?.value);
+    if (!(quantityMl > 0)) return Utils.showToast('请输入大于0的奶量');
+    try {
+      await API.createInventoryBatch({ quantityMl, storageLocation: document.getElementById('inventory-location')?.value?.trim() || '', expiresAt: document.getElementById('inventory-expires')?.value || null, clientEventId: `inventory-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+      App._closeModal();
+      Utils.showToast('存奶已保存');
+      await this._loadInventoryAsync();
+    } catch (error) {
+      Utils.showToast(`保存失败：${error.message || '请稍后重试'}`);
+    }
+  },
+
+  openInventoryDetails() {
+    const batches = this.inventory.batches || [];
+    const transactions = this.inventory.transactions || [];
+    const batchHTML = batches.length ? batches.map(batch => `<div class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(batch.storageLocation || '存奶批次')}</strong><div class="record-meta">总量 ${Number(batch.quantityMl || 0)} ml · 可用 ${Number(batch.availableMl || 0)} ml</div></div>${Number(batch.availableMl || 0) > 0 ? `<button class="btn btn-outline btn-sm" type="button" onclick="ProfilePage.openInventorySettleForm('${Utils.jsAttr(batch.batchId || batch._id)}')">奶瓶结算</button>` : ''}</div>`).join('') : '<div class="empty-state-sm">暂无存奶批次</div>';
+    const transactionHTML = transactions.length ? transactions.slice(0, 10).map(item => `<div class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(item.stockSettlementStatus || '交易')}</strong><div class="record-meta">${Number(item.offeredMl || item.consumedMl || item.stockOutMl || 0)} ml</div></div>${item.stockSettlementStatus === 'SETTLED' ? `<button class="btn btn-outline btn-sm" type="button" onclick="ProfilePage.reverseInventory('${Utils.jsAttr(item.transactionId || item._id)}')">撤销</button>` : ''}</div>`).join('') : '<div class="empty-state-sm">暂无交易记录</div>';
+    App._showModal('存奶明细', `<div class="inventory-detail-list"><h4>存奶批次</h4>${batchHTML}<h4>交易/消耗记录</h4>${transactionHTML}</div>`);
+  },
+
+  openInventorySettleForm(batchId) {
+    App._showModal('奶瓶结算', `<div class="form-group"><label>取出奶量(ml)<input id="inventory-offered" class="form-input" type="number" min="1" step="1"></label></div><div class="form-group"><label>实际喝完(ml)<input id="inventory-consumed" class="form-input" type="number" min="0" step="1"></label></div><div class="form-group"><label>剩余处理<input id="inventory-disposition" class="form-input" placeholder="如：冷藏、丢弃"></label></div><button class="btn btn-primary btn-block" type="button" onclick="ProfilePage._submitInventorySettle('${Utils.jsAttr(batchId)}')">保存结算</button>`);
+  },
+
+  async _submitInventorySettle(batchId) {
+    const offeredMl = Number(document.getElementById('inventory-offered')?.value);
+    const consumedRaw = document.getElementById('inventory-consumed')?.value;
+    const consumedMl = consumedRaw === '' ? null : Number(consumedRaw);
+    if (!(offeredMl > 0) || (consumedMl !== null && !(consumedMl >= 0))) return Utils.showToast('请填写有效的取出量和实际饮用量');
+    try {
+      await API.settleBottle({ batchId, offeredMl, consumedMl, remainingDisposition: document.getElementById('inventory-disposition')?.value?.trim() || '', clientEventId: `inventory-settle-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+      App._closeModal();
+      Utils.showToast('奶瓶结算已保存');
+      await this._loadInventoryAsync();
+    } catch (error) {
+      Utils.showToast(`结算失败：${error.message || '请稍后重试'}`);
+    }
+  },
+
+  async reverseInventory(transactionId) {
+    if (!transactionId) return;
+    if (!confirm('确定撤销这笔库存交易吗？')) return;
+    try {
+      await API.reverseInventoryTransaction(transactionId, '设置页撤销错误交易');
+      Utils.showToast('交易已撤销');
+      await this._loadInventoryAsync();
+      this.openInventoryDetails();
+    } catch (error) {
+      Utils.showToast(`撤销失败：${error.message || '请稍后重试'}`);
+    }
+  },
 
   _setBreastEstimateMethod(method) { if (window.BreastFeeding) BreastFeeding.saveSettings({ estimateMethod: method }); },
   _setBreastSetting(key, value) { if (window.BreastFeeding) BreastFeeding.saveSettings({ [key]: value }); },

@@ -8,6 +8,7 @@ window.FootprintPage = {
   _activeSession: null,
   _todayStats: { count: 0, totalMin: 0 },
   _activeModule: 'walk',
+  _activeOutingType: 'local',
   _outingTodayStats: { count: 0, totalMin: 0, records: [] },
   _mapRecords: [],
   _mapInstance: null,
@@ -50,7 +51,7 @@ window.FootprintPage = {
   /** 从云端加载外出数据 */
   async _loadOutingData() {
     try {
-      const summary = await API.outingTodaySummary().catch(() => null);
+      const summary = await API.outingTodaySummary({ outingType: this._activeOutingType }).catch(() => null);
       this._outingTodayStats = summary || { count: 0, totalMin: 0, records: [] };
     } catch (e) {
       console.warn('[Footprint] 外出数据加载失败:', e.message);
@@ -71,17 +72,13 @@ window.FootprintPage = {
 
     // v117：家庭地址 + 实时天气卡片已移入「下楼溜溜」模块（外出模块不显示天气）
 
-    // v109 模块切换
-    html += `<div class="fp-module-tabs">
-      <button class="fp-module-tab ${this._activeModule === 'walk' ? 'active' : ''}" onclick="FootprintPage._switchModule('walk')">${Lucide.icon('footprints', 16)} 下楼遛弯</button>
-      <button class="fp-module-tab ${this._activeModule === 'outing' ? 'active' : ''}" onclick="FootprintPage._switchModule('outing')">${Lucide.icon('navigation', 16)} 市内出行</button>
-    </div>`;
+    const tabs = [
+      ['walk', 'footprints', '下楼遛弯'], ['local', 'navigation', '市内出行'], ['travel', 'map', '旅行']
+    ];
+    html += `<nav class="v3-subtabs fp-module-tabs" role="tablist" aria-label="足迹分类">${tabs.map(([key, icon, label]) => `<button type="button" class="v3-subtab ${((key === 'walk' && this._activeModule === 'walk') || (key !== 'walk' && this._activeModule === 'outing' && this._activeOutingType === key)) ? 'is-active' : ''}" role="tab" aria-selected="${((key === 'walk' && this._activeModule === 'walk') || (key !== 'walk' && this._activeModule === 'outing' && this._activeOutingType === key))}" onclick="FootprintPage._switchTab('${key}')">${Lucide.icon(icon, 16)}<span>${label}</span></button>`).join('')}</nav>`;
 
-    if (this._activeModule === 'walk') {
-      html += await this._renderWalkHTML();
-    } else {
-      html += await this._renderOutingHTML();
-    }
+    if (this._activeModule === 'walk') html += await this._renderWalkHTML();
+    else html += await this._renderOutingHTML();
 
     c.innerHTML = html;
 
@@ -105,6 +102,7 @@ window.FootprintPage = {
       const data = await API.listOuting({
         startDate: start.toISOString().split('T')[0],
         endDate: now.toISOString().split('T')[0],
+        outingType: this._activeOutingType,
         pageSize: 200
       }).catch(() => null);
       this._mapRecords = data?.records || [];
@@ -157,10 +155,19 @@ window.FootprintPage = {
     }
   },
 
-  /** 切换模块 */
-  async _switchModule(mod) {
-    this._activeModule = mod;
+  async _switchTab(tab) {
+    if (tab === 'walk') {
+      this._activeModule = 'walk';
+    } else {
+      this._activeModule = 'outing';
+      this._activeOutingType = tab;
+    }
     await this._render();
+  },
+
+  /** 兼容旧入口 */
+  async _switchModule(mod) {
+    await this._switchTab(mod === 'outing' ? this._activeOutingType : 'walk');
   },
 
   /** 渲染下楼溜溜模块 */
@@ -252,6 +259,8 @@ window.FootprintPage = {
   /** 渲染外出模块 */
   async _renderOutingHTML() {
     const stats = this._outingTodayStats;
+    const isTravel = this._activeOutingType === 'travel';
+    const typeLabel = isTravel ? '旅行' : '市内出行';
     let html = '';
 
     // 今日统计
@@ -262,7 +271,7 @@ window.FootprintPage = {
     else if (mins > 0) durationStr = mins + '分钟';
 
     html += `<div class="card">
-      <div class="card-title">${Lucide.icon('navigation', 18)} 今日外出</div>
+      <div class="card-title">${Lucide.icon(isTravel ? 'map' : 'navigation', 18)} 今日${typeLabel}</div>
       <div class="footprint-stats">
         <div class="footprint-stat-item">
           <div class="footprint-stat-num">${stats.count || 0}</div>
@@ -287,9 +296,9 @@ window.FootprintPage = {
 
     // 新增外出按钮
     html += `<div class="card">
-      <div class="card-title">${Lucide.icon('plus-circle', 18)} 记录外出</div>
-      <p class="text-muted" style="font-size:13px;margin-bottom:10px">手工填写外出目的、地址、起止时间和陪同人</p>
-      <button class="btn btn-primary btn-block" onclick="FootprintPage.openOutingForm()">${Lucide.icon('plus', 18)} 新增外出</button>
+      <div class="card-title">${Lucide.icon('plus-circle', 18)} 记录${typeLabel}</div>
+      <p class="text-muted" style="font-size:13px;margin-bottom:10px">${isTravel ? '填写目的地、交通、住宿、起止时间和同行人' : '填写外出目的、地址、起止时间和陪同人'}</p>
+      <button class="btn btn-primary btn-block" onclick="FootprintPage.openOutingForm()">${Lucide.icon('plus', 18)} 新增${typeLabel}</button>
     </div>`;
 
     // 今日明细
@@ -358,12 +367,13 @@ window.FootprintPage = {
       const data = await API.listOuting({
         startDate: sevenDaysAgo.toISOString().split('T')[0],
         endDate: now.toISOString().split('T')[0],
+        outingType: this._activeOutingType,
         pageSize: 100
       }).catch(() => null);
       if (data && data.records) {
         const today = Utils.todayStr();
         records = data.records.filter(r => {
-          const rDate = (r.startTime || '').split('T')[0];
+          const rDate = Utils.localDateFromISO(r.startTime || r.date);
           return rDate !== today;
         });
       }
@@ -373,7 +383,7 @@ window.FootprintPage = {
 
     const byDate = {};
     for (const r of records) {
-      const date = (r.startTime || '').split('T')[0];
+      const date = Utils.localDateFromISO(r.startTime || r.date) || 'unknown-date';
       if (!byDate[date]) byDate[date] = [];
       byDate[date].push(r);
     }
@@ -396,12 +406,14 @@ window.FootprintPage = {
       const h = Math.floor(totalMin / 60), m = totalMin % 60;
       const durStr = h > 0 ? h + '小时' + (m > 0 ? m + '分' : '') : m + '分钟';
 
-      const d = new Date(date + 'T00:00:00');
-      const weekday = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
+      const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date);
+      const d = validDate ? new Date(date + 'T00:00:00') : null;
+      const weekday = d && Number.isFinite(d.getTime()) ? ['日', '一', '二', '三', '四', '五', '六'][d.getDay()] : '';
+      const dateLabel = validDate && weekday ? `${date} 周${weekday}` : '日期未记录';
       html += `
         <div class="record-item">
           <div class="record-main">
-            <div class="record-title">${date} 周${weekday}</div>
+            <div class="record-title">${dateLabel}</div>
             <div class="record-meta">${Lucide.icon('navigation', 14)} ${dayRecs.length}次 · ${Lucide.icon('timer', 14)} ${durStr} · ${Utils.escapeHtml(purposes)}</div>
           </div>
         </div>`;
@@ -426,8 +438,17 @@ window.FootprintPage = {
     const address = record && record.address ? record.address : '';
     const companion = record && record.companion ? record.companion : '';
     const note = record && record.note ? record.note : '';
+    const outingType = record?.outingType === 'travel' ? 'travel' : this._activeOutingType;
 
-    App._showModal(record ? '编辑外出记录' : '新增外出', `
+    App._showModal(record ? '编辑外出记录' : outingType === 'travel' ? '新增旅行记录' : '新增市内出行', `
+      <div class="form-group">
+        <label>类型</label>
+        <select id="outing-type" class="form-input">
+          <option value="local" ${outingType === 'local' ? 'selected' : ''}>市内出行</option>
+          <option value="travel" ${outingType === 'travel' ? 'selected' : ''}>旅行</option>
+        </select>
+      </div>
+      ${outingType === 'travel' ? `<div class="form-group"><label>目的地</label><input type="text" id="outing-destination" class="form-input" placeholder="如：杭州" value="${Utils.escapeHtml(record?.destination || '')}"></div><div class="form-group"><label>交通方式</label><input type="text" id="outing-transportation" class="form-input" placeholder="如：高铁、自驾" value="${Utils.escapeHtml(record?.transportation || '')}"></div><div class="form-group"><label>住宿</label><input type="text" id="outing-accommodation" class="form-input" placeholder="可选" value="${Utils.escapeHtml(record?.accommodation || '')}"></div>` : ''}
       <div class="form-group">
         <label>外出目的 *</label>
         <input type="text" id="outing-purpose" class="form-input" placeholder="如：打疫苗、逛公园" value="${Utils.escapeHtml(purpose)}">
@@ -496,6 +517,10 @@ window.FootprintPage = {
     const e = document.getElementById('outing-end')?.value;
     const companion = document.getElementById('outing-companion')?.value?.trim() || '';
     const note = document.getElementById('outing-note')?.value?.trim() || '';
+    const outingType = document.getElementById('outing-type')?.value === 'travel' ? 'travel' : 'local';
+    const destination = document.getElementById('outing-destination')?.value?.trim() || '';
+    const transportation = document.getElementById('outing-transportation')?.value?.trim() || '';
+    const accommodation = document.getElementById('outing-accommodation')?.value?.trim() || '';
 
     if (!purpose) { Utils.showToast('请填写外出目的'); return; }
     if (!s || !e) { Utils.showToast('请选择开始和结束时间'); return; }
@@ -508,13 +533,13 @@ window.FootprintPage = {
       if (this._outingEditId) {
         await API.updateOuting(this._outingEditId, {
           startTime: pair.start, endTime: pair.end,
-          purpose, address, companion, note,
+          purpose, address, companion, note, outingType, destination, transportation, accommodation,
           ...(position || {})
         });
       } else {
         await API.createOuting({
           startTime: pair.start, endTime: pair.end, duration: pair.durationMin,
-          purpose, address, companion, note,
+          purpose, address, companion, note, outingType, destination, transportation, accommodation,
           ...(position || {})
         });
       }
@@ -604,7 +629,7 @@ window.FootprintPage = {
     const hours = (w.hourly || []).map(h => `
       <div class="fp-hour-item">
         <div class="fp-hour-time">${h.time}</div>
-        <div class="fp-hour-icon">${h.icon}</div>
+        <div class="fp-hour-icon">${Lucide.icon('cloud-sun', 18)}</div>
         <div class="fp-hour-temp">${h.temp}°</div>
         <div class="fp-hour-text">${Utils.escapeHtml(h.text)}</div>
         ${h.precipProb != null ? `<div class="fp-hour-rain">${Lucide.icon('droplet', 14)} ${h.precipProb}%</div>` : ''}
@@ -613,7 +638,7 @@ window.FootprintPage = {
     return `
       <div class="fp-weather">
         <div class="fp-weather-now">
-          <div class="fp-weather-icon">${cur.icon}</div>
+          <div class="fp-weather-icon">${Lucide.icon('cloud-sun', 28)}</div>
           <div class="fp-weather-main">
             <div class="fp-weather-temp">${cur.temp}°C</div>
             <div class="fp-weather-text">${Utils.escapeHtml(cur.text)}</div>
@@ -747,7 +772,7 @@ window.FootprintPage = {
       if (data && data.records) {
         const today = Utils.todayStr();
         records = data.records.filter(r => {
-          const rDate = (r.startTime || '').split('T')[0];
+          const rDate = Utils.localDateFromISO(r.startTime || r.date);
           return rDate !== today;
         });
       }
@@ -758,7 +783,7 @@ window.FootprintPage = {
     // 按日期分组
     const byDate = {};
     for (const r of records) {
-      const date = (r.startTime || '').split('T')[0];
+      const date = Utils.localDateFromISO(r.startTime || r.date) || 'unknown-date';
       if (!byDate[date]) byDate[date] = [];
       byDate[date].push(r);
     }

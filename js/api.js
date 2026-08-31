@@ -61,6 +61,22 @@ window.API = {
         err.httpStatus = res.status;
         throw err;
       }
+      const httpStatus = Number(res.status);
+      const httpFailed = res.ok === false || (Number.isFinite(httpStatus) && (httpStatus < 200 || httpStatus >= 300));
+      if (httpFailed) {
+        let errorBody = null;
+        try { errorBody = await Promise.race([res.json(), timeoutPromise]); } catch (_) {}
+        const bodyCode = errorBody?.code;
+        const bodyErrorCode = errorBody?.errorCode || errorBody?.error?.code;
+        const err = new Error(errorBody?.msg || errorBody?.message || `服务请求失败（HTTP ${res.status}）`);
+        err.httpStatus = res.status;
+        err.code = bodyCode ?? res.status;
+        err.errorCode = bodyErrorCode || (res.status >= 500 ? 'HTTP_SERVER_ERROR' : 'HTTP_REQUEST_ERROR');
+        if (res.status === 404 || bodyCode === 404 || bodyErrorCode === 'FUNCTION_NOT_FOUND') err.isFunctionNotFound = true;
+        if (res.status === 401 || bodyCode === 4008 || bodyErrorCode === 'UNAUTHORIZED') err.isAuthError = true;
+        if (res.status === 403 || bodyCode === 4003 || bodyErrorCode === 'FORBIDDEN') err.isPermissionError = true;
+        throw err;
+      }
       const result = await Promise.race([res.json(), timeoutPromise]);
       if (!result || !Object.prototype.hasOwnProperty.call(result, 'code')) {
         const err = new Error('响应缺少业务状态码');
@@ -543,9 +559,9 @@ window.API = {
       action: 'outingList', payload: { babyId: Auth.getBabyId(), ...params }
     });
   },
-  async outingTodaySummary() {
+  async outingTodaySummary(params = {}) {
     return this.call(APP_CONFIG.functions.footprint, {
-      action: 'outingTodaySummary', payload: { babyId: Auth.getBabyId() }
+      action: 'outingTodaySummary', payload: { babyId: Auth.getBabyId(), ...params }
     });
   },
   async deleteOuting(recordId) {

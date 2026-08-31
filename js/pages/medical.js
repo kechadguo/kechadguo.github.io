@@ -480,13 +480,10 @@ window.MedicalPage = {
     let html = '';
 
     // 健康管理四 Tab：保留原疫苗/用药子视图，新增生病周期与长牙。
-    html += `<div class="medicine-tabs health-management-tabs">
-      <button class="medicine-tab ${this.currentHealthTab === 'illness' ? 'active' : ''}" onclick="MedicalPage.switchHealthTab('illness')">${Lucide.icon('thermometer', 15)} 生病用药</button>
-      <button class="medicine-tab ${this.currentHealthTab === 'vaccine' ? 'active' : ''}" onclick="MedicalPage.switchHealthTab('vaccine')">${Lucide.icon('syringe', 15)} 疫苗接种</button>
-      <button class="medicine-tab ${this.currentHealthTab === 'teeth' ? 'active' : ''}" onclick="MedicalPage.switchHealthTab('teeth')">${Lucide.icon('smile', 15)} 长牙记录</button>
-      <button class="medicine-tab ${this.currentHealthTab === 'inventory' ? 'active' : ''}" onclick="MedicalPage.switchHealthTab('inventory')">${Lucide.icon('package', 15)} 常备药清单</button>
-      <button class="medicine-tab ${this.currentHealthTab === 'checkup' ? 'active' : ''}" onclick="MedicalPage.switchHealthTab('checkup')">${Lucide.icon('clipboard-check', 15)} 儿童健康</button>
-    </div>`;
+    const healthTabs = [
+      ['illness', 'thermometer', '生病用药'], ['vaccine', 'syringe', '疫苗接种'], ['teeth', 'smile', '长牙记录'], ['inventory', 'package', '常备药清单'], ['checkup', 'clipboard-check', '儿童健康']
+    ];
+    html += `<nav class="v3-subtabs health-management-tabs" role="tablist" aria-label="健康管理分类">${healthTabs.map(([key, icon, label]) => `<button type="button" class="v3-subtab ${this.currentHealthTab === key ? 'is-active' : ''}" role="tab" aria-selected="${this.currentHealthTab === key}" onclick="MedicalPage.switchHealthTab('${key}')">${Lucide.icon(icon, 15)}<span>${label}</span></button>`).join('')}</nav>`;
 
     if (this.currentHealthTab === 'illness') html += this._renderIllnessTab();
     else if (this.currentHealthTab === 'vaccine') html += this._renderVaccineModule(pending, done);
@@ -594,14 +591,14 @@ window.MedicalPage = {
     </div>`;
 
     // Tab 切换（2 tab）
-    html += `<div class="medical-tabs">
-      <button class="medical-tab ${this.currentTab === 'pending' ? 'active' : ''}" onclick="MedicalPage._switchTab('pending')">
-        ${Lucide.icon('hourglass', 14)} 待接种 (${pending.length})
+    html += `<nav class="v3-subtabs medical-subtabs" role="tablist" aria-label="疫苗记录分类">
+      <button type="button" class="v3-subtab ${this.currentTab === 'pending' ? 'is-active' : ''}" role="tab" aria-selected="${this.currentTab === 'pending'}" onclick="MedicalPage._switchTab('pending')">
+        ${Lucide.icon('hourglass', 14)} <span>待接种 (${pending.length})</span>
       </button>
-      <button class="medical-tab ${this.currentTab === 'done' ? 'active' : ''}" onclick="MedicalPage._switchTab('done')">
-        ${Lucide.icon('check-circle', 14)} 已接种 (${done.length})
+      <button type="button" class="v3-subtab ${this.currentTab === 'done' ? 'is-active' : ''}" role="tab" aria-selected="${this.currentTab === 'done'}" onclick="MedicalPage._switchTab('done')">
+        ${Lucide.icon('check-circle', 14)} <span>已接种 (${done.length})</span>
       </button>
-    </div>`;
+    </nav>`;
 
     if (this.currentTab === 'pending') {
       html += this._renderPending(pending);
@@ -619,14 +616,14 @@ window.MedicalPage = {
     html += this._renderMedicationKnowledge();
 
     // 子 Tab 切换（常备清单 / 用药记录）
-    html += `<div class="medical-tabs">
-      <button class="medical-tab ${this.currentMedTab === 'checklist' ? 'active' : ''}" onclick="MedicalPage._switchMedTab('checklist')">
-        ${Lucide.icon('clipboard-list', 14)} 常备清单 (${medList.reduce((s, c) => s + (c.items?.length || 0), 0)})
+    html += `<nav class="v3-subtabs medical-subtabs" role="tablist" aria-label="用药记录分类">
+      <button type="button" class="v3-subtab ${this.currentMedTab === 'checklist' ? 'is-active' : ''}" role="tab" aria-selected="${this.currentMedTab === 'checklist'}" onclick="MedicalPage._switchMedTab('checklist')">
+        ${Lucide.icon('clipboard-list', 14)} <span>常备清单 (${medList.reduce((s, c) => s + (c.items?.length || 0), 0)})</span>
       </button>
-      <button class="medical-tab ${this.currentMedTab === 'records' ? 'active' : ''}" onclick="MedicalPage._switchMedTab('records')">
-        ${Lucide.icon('pill', 14)} 用药记录 (${medications.length})
+      <button type="button" class="v3-subtab ${this.currentMedTab === 'records' ? 'is-active' : ''}" role="tab" aria-selected="${this.currentMedTab === 'records'}" onclick="MedicalPage._switchMedTab('records')">
+        ${Lucide.icon('pill', 14)} <span>用药记录 (${medications.length})</span>
       </button>
-    </div>`;
+    </nav>`;
 
     // 禁用/慎用清单（两个 tab 都可见，紧贴子 tab 下方）
     html += this._renderProhibitedList();

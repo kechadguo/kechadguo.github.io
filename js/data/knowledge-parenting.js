@@ -7,7 +7,7 @@
  */
 window.KNOWLEDGE_TREE = [
   {
-    key: 'nursing', name: '日常护理', icon: '', desc: '偏头矫正 · 口腔清洁 · 纸尿裤',
+    key: 'nursing', name: '日常护理', icon: 'bath', desc: '偏头矫正 · 口腔清洁 · 纸尿裤',
     items: [
       {
         title: '如何判断宝宝是否偏头',
@@ -36,7 +36,7 @@ window.KNOWLEDGE_TREE = [
     ],
   },
   {
-    key: 'feeding', name: '喂养', icon: '', desc: '母乳喂养 · 辅食添加 · 吃饱信号',
+    key: 'feeding', name: '喂养', icon: 'utensils', desc: '母乳喂养 · 辅食添加 · 吃饱信号',
     items: [
       {
         title: '初乳为什么珍贵',
@@ -77,7 +77,7 @@ window.KNOWLEDGE_TREE = [
     ],
   },
   {
-    key: 'sleep', name: '睡眠', icon: '', desc: '5S安抚 · EASY作息 · 睡眠问题',
+    key: 'sleep', name: '睡眠', icon: 'moon', desc: '5S安抚 · EASY作息 · 睡眠问题',
     items: [
       {
         title: '5S安抚法：让哭闹宝宝安静下来',
@@ -118,7 +118,7 @@ window.KNOWLEDGE_TREE = [
     ],
   },
   {
-    key: 'behavior', name: '行为心理', icon: '', desc: '情绪管理 · 规矩 · 入园 · 叛逆期',
+    key: 'behavior', name: '行为心理', icon: 'brain', desc: '情绪管理 · 规矩 · 入园 · 叛逆期',
     items: [
       {
         title: '宝宝暴躁易怒怎么办',
@@ -159,7 +159,7 @@ window.KNOWLEDGE_TREE = [
     ],
   },
   {
-    key: 'growth', name: '发育', icon: '', desc: '新生儿反射 · 生长曲线 · 视听发育',
+    key: 'growth', name: '发育', icon: 'activity', desc: '新生儿反射 · 生长曲线 · 视听发育',
     items: [
       {
         title: '阿普加评分是什么',
@@ -194,7 +194,7 @@ window.KNOWLEDGE_TREE = [
     ],
   },
   {
-    key: 'vaccine', name: '疫苗', icon: '', desc: '乙肝 · 卡介苗 · 接种反应',
+    key: 'vaccine', name: '疫苗', icon: 'syringe', desc: '乙肝 · 卡介苗 · 接种反应',
     items: [
       {
         title: '乙肝疫苗怎么打',
@@ -217,7 +217,7 @@ window.KNOWLEDGE_TREE = [
     ],
   },
   {
-    key: 'medication', name: '用药', icon: '', desc: '维生素D · 退烧 · 益生菌',
+    key: 'medication', name: '用药', icon: 'pill', desc: '维生素D · 退烧 · 益生菌',
     items: [
       {
         title: '维生素D怎么补',

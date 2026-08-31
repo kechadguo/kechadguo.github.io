@@ -102,6 +102,7 @@ window.AnalyticsPage = {
    */
   async _loadAllDomainsData() {
     const today = new Date();
+    this._analysisWindow = { startDate: Utils.formatDate(new Date(today.getTime() - 180 * 86400000)), endDate: Utils.formatDate(today) };
     const endISO = Utils.formatDate(today);
     const start = new Date(today);
     start.setDate(start.getDate() - 180);
@@ -347,7 +348,7 @@ window.AnalyticsPage = {
     ];
 
     const tabHTML = subTabs.map(t => `
-      <button class="analytics-subtab-btn ${t.id === this._currentSubTab ? 'active' : ''}" data-tab="${t.id}" onclick="AnalyticsPage._switchTab('${t.id}')">
+      <button type="button" class="v3-subtab analytics-subtab-btn ${t.id === this._currentSubTab ? 'is-active' : ''}" role="tab" aria-selected="${t.id === this._currentSubTab}" data-tab="${t.id}" onclick="AnalyticsPage._switchTab('${t.id}')">
         <span class="as-icon">${Lucide.icon(t.icon, 14)}</span>
         <span class="as-label">${t.label}</span>
       </button>
@@ -356,9 +357,9 @@ window.AnalyticsPage = {
     return `
       <div class="analytics-page">
         <!-- 子 tab 导航 -->
-        <div class="analytics-subtab" id="analytics-subtab">
+        <nav class="v3-subtabs analytics-subtab" id="analytics-subtab" role="tablist" aria-label="分析分类">
           ${tabHTML}
-        </div>
+        </nav>
 
         <!-- 子 tab 内容区 -->
         <div class="analytics-content" id="analytics-content">
@@ -374,7 +375,9 @@ window.AnalyticsPage = {
   async _switchTab(tabId, skipLoad) {
     this._currentSubTab = tabId;
     document.querySelectorAll('.analytics-subtab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tabId);
+      const active = btn.dataset.tab === tabId;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', String(active));
     });
     const contentEl = document.getElementById('analytics-content');
     if (!contentEl) return;

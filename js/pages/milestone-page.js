@@ -36,7 +36,6 @@ window.MilestonePage = {
     candidates = candidates || await this._loadCandidates();
     this._candidateRecords = candidates;
     if (!candidates.length) {
-      if (window.V3UI?.setStatus) V3UI.setStatus('empty', '暂无待确认候选');
       return `<section class="v3-state-wrap" data-ms-empty="true">${V3UI.stateHTML('empty', '暂无待确认候选', '新的权威事实产生后，候选会自动出现在这里。')}</section>`;
     }
     return `<div class="card"><div class="card-title">候选确认 <span class="text-muted">${candidates.length}项</span></div>${candidates.map(candidate => `<article class="record-item"><div class="record-main"><div class="record-title">${Utils.escapeHtml(candidate.triggerModule || candidate.ruleId || '里程碑候选')}</div><div class="record-meta">证据：${Utils.escapeHtml(candidate.evidence?.sourceEventId || candidate.triggerEventId || '未知')} · ${Utils.escapeHtml(candidate.status || 'WAITING_CONFIRMATION')}</div></div><button class="btn btn-success btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',true)">确认</button><button class="btn btn-secondary btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',false)">拒绝</button></article>`).join('')}</div>`;
@@ -195,16 +194,29 @@ window.MilestonePage = {
       </div>` : ''}
     `;
 
-    const ageProgressZone = `<section class="ms-zone ms-age-progress" data-ms-zone="age-progress"><div class="ms-zone-title">${Lucide.icon('calendar', 18)} 月龄进度 · ${monthAge}个月</div><p class="text-muted">当前阶段：${Utils.escapeHtml(curGroup.ageLabel || `${curGroup.month}月龄`)}；已确认记录会同步更新徽章和组合成就。</p>${html}</section>`;
-    const badgeZone = this._badgesHTML();
-    const combinationZone = this._combinationsHTML();
-    container.innerHTML = `<div class="ms-page" data-ms-page="five-zones">${ageProgressZone}<section class="ms-zone ms-candidates" data-ms-zone="candidates">${candidateZone}</section><section class="ms-zone ms-confirmed" data-ms-zone="confirmed"><div class="ms-zone-title">${Lucide.icon('clipboard-check', 18)} 已确认里程碑</div>${achievedRecords.length ? achievedRecords.map(r => `<article class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(r.milestoneLabel || r.milestoneKey)}</strong><div class="record-meta">${Utils.escapeHtml(r.domain || '')} · ${Utils.formatDate(r.date)}${r.note ? ` · ${Utils.escapeHtml(r.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已确认里程碑。</p>'}</section>${badgeZone}${combinationZone}</div>`;
+    const ageProgressZone = `<section class="v3-subtab-panel ms-zone ms-age-progress" data-ms-panel="monthly" data-ms-zone="age-progress" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('calendar', 18)} 月龄进度 · ${monthAge}个月</div><p class="text-muted">当前阶段：${Utils.escapeHtml(curGroup.ageLabel || `${curGroup.month}月龄`)}；已确认记录会同步更新徽章和组合成就。</p>${html}</section>`;
+    const badgeZone = this._badgesHTML().replace('class="ms-zone ms-badges"', 'class="v3-subtab-panel ms-zone ms-badges" data-ms-panel="badges"');
+    const combinationZone = this._combinationsHTML().replace('class="ms-zone ms-combinations"', 'class="v3-subtab-panel ms-zone ms-combinations" data-ms-panel="combinations"');
+    const confirmedZone = `<section class="v3-subtab-panel ms-zone ms-confirmed" data-ms-panel="confirmed" data-ms-zone="confirmed" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('clipboard-check', 18)} 已确认里程碑</div>${achievedRecords.length ? achievedRecords.map(r => `<article class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(r.milestoneLabel || r.milestoneKey)}</strong><div class="record-meta">${Utils.escapeHtml(r.domain || '')} · ${Utils.formatDate(r.date)}${r.note ? ` · ${Utils.escapeHtml(r.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已确认里程碑。</p>'}</section>`;
+    const candidatePanel = `<section class="v3-subtab-panel ms-zone ms-candidates" data-ms-panel="candidates" data-ms-zone="candidates" role="tabpanel">${candidateZone}</section>`;
+    const tabs = [['monthly', 'calendar', '月龄进度', groups.length], ['candidates', 'clock-3', '待确认', this._candidateRecords.length], ['confirmed', 'clipboard-check', '已确认', achievedRecords.length], ['badges', 'award', '成就徽章', this._unlockedBadges.length], ['combinations', 'layers', '组合成就', (this._achievements?.combinations || []).filter(item => item.unlocked).length]];
+    const activeTab = tabs.some(item => item[0] === this._activeTab) ? this._activeTab : 'monthly';
+    container.innerHTML = `<div class="ms-page" data-ms-page="five-tabs"><nav class="v3-subtabs ms-tabs" role="tablist" aria-label="里程碑分类">${tabs.map(([key, icon, label, count]) => `<button type="button" class="v3-subtab ${activeTab === key ? 'is-active' : ''}" role="tab" aria-selected="${activeTab === key}" onclick="MilestonePage.switchTab('${key}')">${Lucide.icon(icon, 15)}<span>${label}</span><b class="v3-subtab-count">${count}</b></button>`).join('')}</nav><div class="ms-tab-panels">${ageProgressZone}${candidatePanel}${confirmedZone}${badgeZone}${combinationZone}</div></div>`;
+    container.querySelectorAll('[data-ms-panel]').forEach(panel => { panel.hidden = panel.dataset.msPanel !== activeTab; });
     this._bindPhotoUpload(container);
   },
 
-  async switchTab(tab) {
+  switchTab(tab) {
     this._activeTab = tab;
-    return this.reload();
+    const root = this._container;
+    if (!root) return;
+    root.querySelectorAll('.ms-tabs .v3-subtab').forEach(button => {
+      const active = button.getAttribute('onclick')?.includes(`'${tab}'`);
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    root.querySelectorAll('[data-ms-panel]').forEach(panel => { panel.hidden = panel.dataset.msPanel !== tab; });
+    window.V3UI?.setStatus?.('loaded', '');
   },
 
   _badgesHTML() {

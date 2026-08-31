@@ -1,12 +1,12 @@
 window.ScreeningPage = {
   _records: [],
   _items: [
-    { id: 'hearing_48h', name: '听力筛查（48小时）', icon: '耳', suggestDay: 2, desc: '出生后早期完成初筛，未通过需按医嘱复查。' },
-    { id: 'hearing_42d', name: '听力复筛（42天）', icon: '耳', suggestDay: 42, desc: '首次未通过或需要复查时进行。' },
-    { id: 'metabolic', name: '遗传代谢病筛查', icon: '检', suggestDay: 3, desc: '足跟血筛查，用于早期发现相关代谢疾病。' },
-    { id: 'heart', name: '先心病筛查', icon: '心', suggestDay: 3, desc: '结合脉搏血氧和医生检查结果记录。' },
-    { id: 'hip', name: '髋关节检查', icon: '骨', suggestDay: 42, desc: '按医生建议评估髋关节发育。' },
-    { id: 'jaundice', name: '黄疸监测', icon: '黄', suggestDay: 3, desc: '记录监测日期、结果和医生建议。' }
+    { id: 'hearing_48h', name: '听力筛查（48小时）', icon: 'volume-2', suggestDay: 2, desc: '出生后早期完成初筛，未通过需按医嘱复查。' },
+    { id: 'hearing_42d', name: '听力复筛（42天）', icon: 'volume-2', suggestDay: 42, desc: '首次未通过或需要复查时进行。' },
+    { id: 'metabolic', name: '遗传代谢病筛查', icon: 'clipboard-check', suggestDay: 3, desc: '足跟血筛查，用于早期发现相关代谢疾病。' },
+    { id: 'heart', name: '先心病筛查', icon: 'heart-pulse', suggestDay: 3, desc: '结合脉搏血氧和医生检查结果记录。' },
+    { id: 'hip', name: '髋关节检查', icon: 'activity', suggestDay: 42, desc: '按医生建议评估髋关节发育。' },
+    { id: 'jaundice', name: '黄疸监测', icon: 'droplet', suggestDay: 3, desc: '记录监测日期、结果和医生建议。' }
   ],
   async render(container) {
     this.container = container;
@@ -22,7 +22,7 @@ window.ScreeningPage = {
   _itemHTML(item, daysOld) {
     const record = this._records.find(r => r.screeningId === item.id);
     const status = record ? (record.result === 'pass' ? '通过' : record.result === 'refer' ? '需复查' : '异常') : (daysOld > item.suggestDay ? '待补记' : `建议第${item.suggestDay}天`);
-    return `<button class="screening-item ${record ? record.result : 'pending'}" onclick="ScreeningPage.openRecord('${item.id}')"><span class="sci-icon">${item.icon}</span><span class="sci-content"><strong class="sci-name">${item.name}</strong><small class="sci-desc">${item.desc}</small><small class="sci-suggest">${record ? `检查日期：${record.date}` : `建议时间：出生后${item.suggestDay}天`}</small></span><span class="sci-status">${status}</span></button>`;
+    return `<button class="screening-item ${record ? record.result : 'pending'}" onclick="ScreeningPage.openRecord('${item.id}')"><span class="sci-icon">${Lucide.icon(item.icon || 'clipboard-check', 18)}</span><span class="sci-content"><strong class="sci-name">${item.name}</strong><small class="sci-desc">${item.desc}</small><small class="sci-suggest">${record ? `检查日期：${record.date}` : `建议时间：出生后${item.suggestDay}天`}</small></span><span class="sci-status">${status}</span></button>`;
   },
   openRecord(id) {
     const item = this._items.find(i => i.id === id); const record = this._records.find(r => r.screeningId === id) || {};

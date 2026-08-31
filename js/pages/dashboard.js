@@ -530,18 +530,20 @@ window.DashboardPage = {
     try {
       stats = window.FootprintPage && FootprintPage.getTodayFootprintStats ? FootprintPage.getTodayFootprintStats() : { count: 0, totalMin: 0 };
     } catch { stats = { count: 0, totalMin: 0 }; }
-    if (stats.count === 0) return '';
+    const count = Number(stats?.count || 0);
+    const totalMin = Number(stats?.totalMin || 0);
+    if (count <= 0) return '';
 
     return `
       <div class="dash-stat-row">
         <div class="dash-stat" onclick="showPage('footprint')">
           <div class="ds-icon">${Lucide.icon('footprints', 20)}</div>
-          <div class="ds-value" style="color:#13C2C2">${stats.count}</div>
+          <div class="ds-value" style="color:#13C2C2">${count}</div>
           <div class="ds-label">遛弯(次)</div>
         </div>
         <div class="dash-stat" onclick="showPage('footprint')">
           <div class="ds-icon">${Lucide.icon('timer', 20)}</div>
-          <div class="ds-value" style="color:#13C2C2;font-size:14px">${Number(stats.totalMin || 0)}min</div>
+          <div class="ds-value" style="color:#13C2C2;font-size:14px">${totalMin}min</div>
           <div class="ds-label">户外时长</div>
         </div>
       </div>

@@ -21,10 +21,10 @@ window.ParentingPage = {
     ];
 
     container.innerHTML = `
-      <div class="sub-tabs" id="parenting-sub-tabs">
-        ${tabs.map(t => `<button class="sub-tab ${t.key === this.currentSub ? 'active' : ''}" onclick="ParentingPage.switchSub('${t.key}')">${t.label}</button>`).join('')}
-      </div>
-      <div id="parenting-content"></div>
+      <nav class="v3-subtabs" id="parenting-sub-tabs" role="tablist" aria-label="成长日记分类">
+        ${tabs.map(t => `<button type="button" class="v3-subtab ${t.key === this.currentSub ? 'is-active' : ''}" role="tab" aria-selected="${t.key === this.currentSub}" onclick="ParentingPage.switchSub('${t.key}')">${t.label}</button>`).join('')}
+      </nav>
+      <div id="parenting-content" class="v3-subtab-panel" role="tabpanel"></div>
     `;
 
     await this._renderSub(renderSeq);
@@ -32,7 +32,11 @@ window.ParentingPage = {
 
   async switchSub(key) {
     this.currentSub = key;
-    $$('#parenting-sub-tabs .sub-tab').forEach(b => b.classList.toggle('active', b.textContent === this._tabLabel(key)));
+    $$('#parenting-sub-tabs .v3-subtab').forEach(b => {
+      const active = b.textContent.trim() === this._tabLabel(key);
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-selected', String(active));
+    });
     await this._renderSub();
   },
 
@@ -72,7 +76,7 @@ window.ParentingPage = {
     const end = Utils.todayStr();
     const start = Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD');
     const snapshot = await API.getUnifiedSnapshot({ startDate: start, endDate: end });
-    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    if (!snapshot || !['loaded', 'partial'].includes(snapshot.status)) throw new Error('统一数据快照不可用');
     const records = snapshot.records?.[kind] || [];
     const dayMap = {};
     for (let i = 0; i < 7; i++) {
@@ -195,7 +199,7 @@ window.ParentingPage = {
     const endDate = Utils.todayStr();
     const startDate = Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD');
     const snapshot = await API.getUnifiedSnapshot({ startDate, endDate });
-    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    if (!snapshot || !['loaded', 'partial'].includes(snapshot.status)) throw new Error('统一数据快照不可用');
     const feedRecords = snapshot.records?.feeding || [];
     const todayRecords = feedRecords.filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === endDate);
     const summary = { records: todayRecords, totalML: todayRecords.reduce((sum, record) => sum + Number(record.consumedMl || record.outputMl || record.amount || 0), 0), totalCount: todayRecords.length };
@@ -355,13 +359,14 @@ window.ParentingPage = {
   async _renderUrination(el) {
     const baby = Utils.getBabyInfo();
     const snapshot = await API.getUnifiedSnapshot({ startDate: Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD'), endDate: Utils.todayStr() });
-    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    if (!snapshot || !['loaded', 'partial'].includes(snapshot.status)) throw new Error('统一数据快照不可用');
     const records = (snapshot.records?.stool || []).filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === Utils.todayStr());
     const summary = { records };
 
     const week = await this._fetch7Days('stool');
     const urineCount = records.filter(r => r.type === 'urine').length;
     const diaperCount = records.filter(r => r.type === 'diaper').length;
+    const stoolCount = records.filter(r => !['urine', 'diaper'].includes(r.type)).length;
 
     el.innerHTML = `
       <div class="dash-stat-row dash-stat-row-lg">
@@ -439,7 +444,7 @@ window.ParentingPage = {
   // ===== 清洁与每日护理 =====
   async _renderClean(el) {
     const snapshot = await API.getUnifiedSnapshot({ startDate: Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD'), endDate: Utils.todayStr() });
-    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    if (!snapshot || !['loaded', 'partial'].includes(snapshot.status)) throw new Error('统一数据快照不可用');
     const records = (snapshot.records?.clean || []).filter(record => Utils.localDateFromISO(record.time || record.occurredAt) === Utils.todayStr()).sort((a, b) => new Date(b.time || b.occurredAt) - new Date(a.time || a.occurredAt));
     const summary = { records, bath: records.filter(r => r.type === 'bath').length, shampoo: records.filter(r => r.type === 'shampoo').length, washFace: records.filter(r => r.type === 'wash_face').length, nailTrim: records.filter(r => r.type === 'nail_trim').length };
 
@@ -743,7 +748,7 @@ window.ParentingPage = {
   async _renderSleep(el) {
     const activeSleep = Utils.getActiveSleepSession();
     const snapshot = await API.getUnifiedSnapshot({ startDate: Utils.formatDate(new Date(Date.now() - 6 * 86400000), 'YYYY-MM-DD'), endDate: Utils.todayStr() });
-    if (!snapshot || snapshot.status !== 'loaded') throw new Error('统一数据快照不可用');
+    if (!snapshot || !['loaded', 'partial'].includes(snapshot.status)) throw new Error('统一数据快照不可用');
     const records = (snapshot.records?.sleep || []).filter(record => Utils.localDateFromISO(record.startTime || record.occurredAt || record.time) === Utils.todayStr());
     const summary = { records, totalMinutes: records.reduce((sum, record) => sum + Number(record.duration || 0), 0), sessions: records.length, longest: records.reduce((max, record) => Math.max(max, Number(record.duration || 0)), 0) };
     const week = await this._fetch7Days('sleep');

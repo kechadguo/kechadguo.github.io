@@ -998,6 +998,22 @@ window.Lucide = (function() {
     'cloud-off':     '<path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/>',
   };
 
+  // R23：补齐页面使用但基础图标表未单独登记的语义别名，避免落到圆点兜底图标。
+  Object.assign(P, {
+    'alert-octagon': P['alert-triangle'], 'alert-circle': P.info, archive: P['clipboard-list'], award: P.star,
+    'badge-check': P['check-circle'], 'bar-chart-3': P['bar-chart-2'], beaker: P['activity'],
+    'clipboard-check': P['check-square'],
+    bell: P['clock'], 'camera-off': P.camera, circle: P['circle-dot'], 'clock-3': P.clock,
+    'cloud-sun': P.map, cross: P['plus'], 'edit-2': P['edit-3'],
+    'graduation-cap': P.school, heart: P['heart-pulse'], 'heart-handshake': P.users,
+    history: P.clock, 'life-buoy': P['help-circle'], list: P['clipboard-list'],
+    'log-in': P.user, 'maximize-2': P['plus'], navigation: P.map, package: P['clipboard-list'], 'package-x': P['clipboard-list'],
+    'play-circle': P['circle-dot'], share: P.link, 'share-2': P.link, shield: P['check-circle'],
+    'shield-alert': P['alert-triangle'], 'shield-check': P['check-circle'], trophy: P.star,
+    'triangle-alert': P['alert-triangle'], 'loader-circle': P.loader, 'wifi-off': P['cloud-off'],
+    'git-merge': P.link, umbrella: P.map, 'user-plus': P.user
+  });
+
   /* v95 批次F：emoji → Lucide 图标名映射（展示层转换用；含 ZWJ 序列）
      仅覆盖 UI 装饰性 emoji；数据语义类（大便颜色 、形状 、
      量级 、心情  等）不映射——它们承载颜色/语义信息，Lucide 无法表达 */
@@ -1060,7 +1076,9 @@ window.Lucide = (function() {
 
   return {
     icon(name, size) {
-      const p = P[name];
+      // 未登记的新图标不能让设置项/功能入口直接变成“无图标”。
+      // 使用稳定的通用图标兜底，同时保留原有图标名调用契约。
+      const p = P[name] || P['circle-dot'];
       if (!p) return '';
       const s = size || 18;
       return '<svg viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';

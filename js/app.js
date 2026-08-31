@@ -1070,10 +1070,16 @@ window.App = {
       Utils.setLastFeedInput(this._feedType, { amount });
       this._closeModal();
       this._feedType = '';
+      this._feedingRequestId = null;
       Utils.showToast(' 已保存');
       this._refreshCurrent();
     } catch (e) {
-      Utils.showToast(e.isAuthError ? '登录已失效，请重新登录' : e.isTimeoutError ? '请求超时，请重试' : e.isFunctionNotFound ? '服务暂未部署' : e.isNetworkError ? '网络连接失败，请重试' : '保存失败: ' + e.message);
+      if (e.isAuthError) Utils.showToast('登录已失效，请重新登录');
+      else if (e.isTimeoutError) Utils.showToast('请求超时，请重试');
+      else if (e.isFunctionNotFound) Utils.showToast('服务暂未部署');
+      else if (e.isNetworkError) Utils.showToast('网络连接失败，请重试');
+      else if (e.code === 'INCOMPLETE_WRITE_CONFIRMATION') Utils.showToast('服务端未确认写入，请勿重复提交');
+      else Utils.showToast('保存失败: ' + e.message);
     } finally {
       this._feedingSubmitPending = false;
       Utils.hideLoading();
@@ -2101,6 +2107,7 @@ window.App = {
   // ===== 母乳瓶喂快捷输入（默认回填上次奶量，删除语音模块） =====
   openBottleBreastForm() {
     const timeStr = Utils.formatDate(new Date(), 'HH:mm');
+    this._feedingRequestId = globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const last = Utils.getLastFeedInput('bottle_breast');
     const lastAmount = last && last.amount ? parseInt(last.amount) : '';
     this._showModal('母乳瓶喂', `
@@ -2127,7 +2134,7 @@ window.App = {
     const timeInput = document.getElementById('bottle-time').value;
     const note = document.getElementById('bottle-note')?.value || '';
     const time = this._timeToISO(timeInput);
-    const clientRequestId = globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const clientRequestId = this._feedingRequestId || (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `feeding-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     this._feedingSubmitPending = true;
     Utils.showLoading('保存中...');
     try {
@@ -2299,10 +2306,14 @@ window.App = {
 
   _timeToISO(timeStr) {
     if (!timeStr) return new Date().toISOString();
-    const [h, m] = timeStr.split(':');
-    const d = new Date();
-    d.setHours(parseInt(h), parseInt(m), 0, 0);
-    return d.toISOString();
+    const match = /^(\d{2}):(\d{2})$/.exec(timeStr);
+    if (!match) throw Object.assign(new Error('时间格式无效'), { code: 'INVALID_TIME' });
+    const [, hour, minute] = match;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return new Date(`${year}-${month}-${day}T${hour}:${minute}:00+08:00`).toISOString();
   },
 
   _installModalA11y() {
