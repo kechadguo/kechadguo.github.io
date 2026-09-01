@@ -1,385 +1,310 @@
-/**
- * 里程碑模块 — 独立功能页（v83 集成：三阶段动态视图 + FocusGuide + 发育参考）
- * 结构：本月关注引导 → 当月里程碑 → 上月未勾选 → 下一阶段预告
- *       → 发育参考（大运动/乳牙，默认折叠）→ 第一次记录 → 已记录列表
- * 交互：点击勾选 → App.recordMilestone 一键落库，弹窗可选补备注
- */
+/* 里程碑前端：五个业务 Tab、稳定 milestoneId、局部状态与联动。 */
 window.MilestonePage = {
   _container: null,
-  _monthAge: null,
-  _activeTab: 'monthly',
+  _monthAge: 0,
+  _activeTab: 'progress',
+  _focusedMilestoneId: '',
   _candidateRecords: [],
-  async _loadCandidates() {
-    if (!API.listMilestoneCandidates) return [];
-    const result = await API.listMilestoneCandidates();
-    return result?.records || [];
-  },
+  _records: [],
+  _achievements: {},
+  _filters: { domain: '全部', status: '全部', source: '全部', date: '' },
+  _tabs: [
+    ['progress', 'trending-up', '成长进度'],
+    ['graph', 'list-tree', '月龄图谱'],
+    ['candidates', 'clock-3', '待确认'],
+    ['achievements', 'clipboard-check', '全部成就'],
+    ['catalog', 'book-marked', '成就图鉴']
+  ],
+  _sourceLabels: { automatic: '自动完成', candidate: '候选确认', manual: '手工记录', photo: '照片打卡' },
+
   _stateFromError(error) {
     if (error?.isPermissionError || error?.httpStatus === 403 || error?.code === 4003) return 'permission-denied';
     if (error?.isAuthError || error?.code === 4008 || error?.code === 4009) return 'auth-required';
     if (error?.isConflict || error?.code === 'CONFLICT' || error?.httpStatus === 409) return 'conflict';
-    if (error?.isNetworkError || Utils.isOffline?.()) return 'offline';
+    if (error?.isNetworkError || window.navigator?.onLine === false || Utils.isOffline?.()) return 'offline';
+    if (error?.isTimeoutError) return 'error';
     return 'error';
   },
-  _stateHTML(state, message = '') {
+
+  _stateCopy(state, title, desc) {
     const copy = {
-      'auth-required': ['请先登录', '登录后才能查看宝宝的里程碑。'],
-      'permission-denied': ['暂无访问权限', '请切换到有权限的家庭或联系管理员。'],
-      conflict: ['数据发生冲突', '请刷新后重新确认候选，避免覆盖其他成员的更新。'],
-      offline: ['当前离线', '联网后可同步候选和已确认里程碑；本地页面仍可查看已缓存内容。'],
-      error: ['加载失败', message || '请稍后重试。']
-    }[state] || ['加载中', message || '页面加载中。'];
-    if (window.V3UI?.setStatus) V3UI.setStatus(state, copy[0]);
-    return V3UI?.stateHTML ? V3UI.stateHTML(state, copy[0], copy[1], `<button class="btn btn-primary" type="button" onclick="MilestonePage.reload()">重新加载</button>`) : `<div class="empty-state"><h2>${Utils.escapeHtml(copy[0])}</h2><p>${Utils.escapeHtml(copy[1])}</p></div>`;
+      loading: ['加载中', desc || '正在加载里程碑数据。'],
+      loaded: [title || '已加载', desc || ''],
+      empty: [title || '暂无数据', desc || '完成记录后会显示在这里。'],
+      partial: [title || '部分内容不可用', desc || '成功区域仍可继续使用。'],
+      error: [title || '加载失败', desc || '请稍后重试。'],
+      offline: [title || '当前离线', desc || '联网后可同步最新数据。'],
+      'auth-required': [title || '请先登录', desc || '登录后才能查看宝宝的里程碑。'],
+      'permission-denied': [title || '暂无访问权限', desc || '请切换到有权限的家庭。'],
+      conflict: [title || '数据发生冲突', desc || '请刷新后重新加载。'],
+      submitting: [title || '正在提交', desc || '请稍候。'],
+      success: [title || '操作成功', desc || '数据已更新。']
+    };
+    return copy[state] || copy.error;
   },
-  async _candidateHTML(candidates = null) {
-    candidates = candidates || await this._loadCandidates();
-    this._candidateRecords = candidates;
-    if (!candidates.length) {
-      return `<section class="v3-state-wrap" data-ms-empty="true">${V3UI.stateHTML('empty', '暂无待确认候选', '新的权威事实产生后，候选会自动出现在这里。')}</section>`;
-    }
-    return `<div class="card"><div class="card-title">候选确认 <span class="text-muted">${candidates.length}项</span></div>${candidates.map(candidate => { const title = this._milestoneTitle(candidate.milestoneId) || candidate.milestoneLabel || candidate.triggerModule || candidate.ruleId || '里程碑候选'; return `<article class="record-item" data-milestone-id="${Utils.jsAttr(candidate.milestoneId || '')}"><div class="record-main"><div class="record-title">${Utils.escapeHtml(title)}</div><div class="record-meta">来源：${Utils.escapeHtml(candidate.sourceModule || candidate.triggerModule || '未知')} · 证据：${Utils.escapeHtml(candidate.evidence?.sourceEventId || candidate.triggerEventId || '未知')} · ${Utils.escapeHtml(candidate.status || 'WAITING_CONFIRMATION')}</div></div><button class="btn btn-success btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',true)">确认</button><button class="btn btn-secondary btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',false)">拒绝</button></article>`; }).join('')}</div>`;
+
+  _panelState(tab, state, title, desc, retry = true) {
+    const copy = this._stateCopy(state, title, desc);
+    const action = retry && ['error', 'offline', 'auth-required', 'permission-denied', 'conflict'].includes(state)
+      ? `<button class="btn btn-primary btn-sm" type="button" onclick="MilestonePage.retryTab('${tab}')">重新加载</button>` : '';
+    return `<div class="ms-panel-state" data-ms-state="${state}" data-ms-state-tab="${tab}">${V3UI.stateHTML(state, copy[0], copy[1], action)}</div>`;
   },
-  async _reviewCandidate(candidateId, approved) {
-    const container = this._container;
-    if (container) {
-      container.setAttribute('aria-busy', 'true');
-      const action = container.querySelector(`[onclick*="_reviewCandidate('${Utils.jsAttr(candidateId)}'"]`);
-      if (action) { action.disabled = true; action.setAttribute('aria-busy', 'true'); }
-      const status = document.getElementById('page-status');
-      if (window.V3UI?.setStatus) V3UI.setStatus('submitting', '正在提交候选处理');
-    }
-    try {
-      await API.confirmMilestoneCandidate(candidateId, approved);
-      if (container) container.innerHTML = V3UI.stateHTML('success', approved ? '候选已确认' : '候选已拒绝', '里程碑、徽章和组合成就将重新计算。');
-      if (window.V3UI?.setStatus) V3UI.setStatus('success', approved ? '候选已确认' : '候选已拒绝');
-      setTimeout(() => this.reload(), 500);
-    } catch (error) {
-      const state = this._stateFromError(error);
-      if (container) { container.setAttribute('aria-busy', 'false'); container.innerHTML = this._stateHTML(state, error.message); }
-      if (window.V3UI?.setStatus) V3UI.setStatus(state, '候选处理失败');
-    }
+
+  _sourceLabel(source) { return this._sourceLabels[source] || source || '记录完成'; },
+
+  _milestoneTitle(milestoneId) {
+    return (window.MILESTONE_STANDARD || []).flatMap(group => group.items || []).find(item => item.milestoneId === milestoneId)?.skill || '';
+  },
+
+  _model() {
+    const records = this._records || [];
+    const achievedMap = {};
+    records.forEach(record => {
+      const id = record.milestoneId || getMilestoneId(record.milestoneKey);
+      if (id && !record.deletedAt) achievedMap[id] = record;
+    });
+    const candidateMap = {};
+    (this._candidateRecords || []).forEach(candidate => {
+      if (candidate.milestoneId && !['REJECTED', 'EXPIRED'].includes(candidate.status)) candidateMap[candidate.milestoneId] = candidate;
+    });
+    const allItems = (window.MILESTONE_STANDARD || []).flatMap(group => (group.items || []).map(item => ({ ...item, month: group.month, ageLabel: group.ageLabel })));
+    return { records, achievedMap, candidateMap, candidates: this._candidateRecords || [], allItems };
+  },
+
+  _itemStatus(item, model) {
+    if (model.achievedMap[item.milestoneId]) return '已完成';
+    if (model.candidateMap[item.milestoneId]) return '待确认';
+    return '未完成';
+  },
+
+  _itemHTML(item, model, options = {}) {
+    const record = model.achievedMap[item.milestoneId];
+    const candidate = model.candidateMap[item.milestoneId];
+    const status = record ? 'completed' : candidate ? 'pending' : 'uncompleted';
+    const focused = this._focusedMilestoneId === item.milestoneId ? ' is-focused' : '';
+    const action = record
+      ? `<span class="ms-item-complete">${Utils.escapeHtml(Utils.formatDate(record.date))} · ${Utils.escapeHtml(this._sourceLabel(record.sourceType))}</span>`
+      : candidate
+        ? '<span class="ms-item-pending">待确认</span>'
+        : `<button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.openManualRecord('${Utils.jsAttr(item.milestoneId)}')">手工记录</button>`;
+    return `<article class="ms-item ms-item-${status}${focused}" id="ms-item-${Utils.jsAttr(item.milestoneId)}" data-milestone-id="${Utils.jsAttr(item.milestoneId)}" data-ms-status="${status}"><div class="ms-item-main"><div class="ms-item-title"><span class="ms-domain-chip">${Utils.escapeHtml(item.domain)}</span><strong>${Utils.escapeHtml(item.skill)}</strong>${options.current ? '<span class="ms-current-mark">当前</span>' : ''}</div><div class="ms-id">${Utils.escapeHtml(item.milestoneId)}</div><p>${Utils.escapeHtml(item.desc || '')}</p>${record?.note ? `<div class="ms-item-note">备注：${Utils.escapeHtml(record.note)}</div>` : ''}${record ? `<button class="ms-inline-link" type="button" onclick="MilestonePage.editNote('${Utils.jsAttr(record._id)}')">补备注</button>` : ''}${item.warning ? `<div class="ms-item-warning">${Lucide.icon('alert-triangle', 13)} ${Utils.escapeHtml(item.warning)}</div>` : ''}</div><div class="ms-item-side">${action}<button class="btn-icon" type="button" aria-label="定位${Utils.escapeHtml(item.skill)}" title="定位到图谱" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(item.milestoneId)}')">${Lucide.icon('crosshair', 16)}</button></div></article>`;
+  },
+
+  _progressHTML(model) {
+    const baby = Utils.getBabyInfo();
+    const groups = window.MILESTONE_STANDARD || [];
+    const current = groups.filter(group => group.month <= Math.max(1, Math.floor(this._monthAge))).at(-1) || groups[0];
+    const items = current?.items || [];
+    const completed = items.filter(item => model.achievedMap[item.milestoneId]).length;
+    const rate = items.length ? Math.round(completed / items.length * 100) : 0;
+    const next = groups.find(group => group.month > (current?.month || 0));
+    const highlights = items.slice(0, 5);
+    return `<div class="ms-progress-layout"><section class="ms-summary-card"><div class="ms-summary-kicker">成长进度</div><h2>${Utils.escapeHtml(baby?.name || '宝宝')} · ${this._monthAge}个月</h2><p class="ms-summary-stage">当前阶段：${Utils.escapeHtml(current?.ageLabel || '暂无阶段')}</p><div class="ms-progress-metric"><strong>${completed}/${items.length}</strong><span>当前阶段完成</span><b>${rate}%</b></div><div class="ms-progress-track" aria-label="完成率 ${rate}%"><span style="width:${rate}%"></span></div><div class="ms-summary-actions"><button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.switchTab('achievements')">查看全部成就</button><button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.switchTab('candidates')">待确认 ${model.candidates.length}</button></div></section><section class="ms-focus-section"><div class="ms-section-head"><div><h3>当前重点能力</h3><p>点击能力可在月龄图谱中定位。</p></div><button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.switchTab('graph')">查看完整图谱</button></div><div class="ms-focus-list">${highlights.length ? highlights.map(item => `<button class="ms-focus-item" type="button" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(item.milestoneId)}')"><span>${Utils.escapeHtml(item.domain)}</span><strong>${Utils.escapeHtml(item.skill)}</strong><small>${model.achievedMap[item.milestoneId] ? '已完成' : '未完成'}</small>${Lucide.icon('chevron-right', 15)}</button>`).join('') : '<p class="ms-empty-inline">暂无当前阶段能力。</p>'}</div></section><section class="ms-next-section"><div class="ms-section-head"><div><h3>下一阶段预告</h3><p>${next ? `${Utils.escapeHtml(next.ageLabel)} · ${next.items.length}项能力` : '已到标准图谱末段'}</p></div>${next?.items?.[0] ? `<button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(next.items[0].milestoneId)}')">查看</button>` : ''}</div>${next ? `<p>${Utils.escapeHtml(next.items.slice(0, 3).map(item => item.skill).join('、'))}${next.items.length > 3 ? '等' : ''}</p>` : ''}</section></div>`;
+  },
+
+  _graphHTML(model) {
+    const domains = ['全部', ...new Set(model.allItems.map(item => item.domain))];
+    const filtered = model.allItems.filter(item => this._filters.domain === '全部' || item.domain === this._filters.domain).filter(item => this._filters.status === '全部' || this._itemStatus(item, model) === this._filters.status);
+    const bands = [['1-12月龄', 1, 12], ['13-24月龄', 13, 24], ['25-36月龄', 25, 36]];
+    return `<div class="ms-graph-wrap"><div class="ms-section-head"><div><h2>月龄图谱</h2><p>完整展示 1～36 月龄全部 ${model.allItems.length} 项标准里程碑。</p></div><span class="ms-count-badge">${filtered.length}/${model.allItems.length}</span></div><div class="ms-filter-bar"><label>领域<select aria-label="按领域筛选" onchange="MilestonePage.setFilter('domain',this.value)">${domains.map(value => `<option ${value === this._filters.domain ? 'selected' : ''}>${Utils.escapeHtml(value)}</option>`).join('')}</select></label><label>状态<select aria-label="按状态筛选" onchange="MilestonePage.setFilter('status',this.value)">${['全部', '已完成', '未完成', '待确认'].map(value => `<option ${value === this._filters.status ? 'selected' : ''}>${value}</option>`).join('')}</select></label><button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.resetFilters()">重置筛选</button></div>${bands.map(([label, min, max], index) => { const groups = (window.MILESTONE_STANDARD || []).filter(group => group.month >= min && group.month <= max); const visible = groups.reduce((sum, group) => sum + group.items.filter(item => filtered.some(row => row.milestoneId === item.milestoneId)).length, 0); const current = this._monthAge >= min && this._monthAge <= max; return `<section class="ms-age-band ${current ? 'is-current' : ''}"><button class="ms-age-band-head" type="button" aria-expanded="${index === 0}" onclick="MilestonePage.toggleBand('ms-band-${index}')"><span><strong>${label}</strong><small>${current ? '当前月龄所在段' : ''}</small></span><b>${visible}项</b>${Lucide.icon('chevron-down', 16)}</button><div id="ms-band-${index}" class="ms-age-band-body" ${index === 0 ? '' : 'hidden'}>${groups.map(group => { const items = group.items.filter(item => filtered.some(row => row.milestoneId === item.milestoneId)); return items.length ? `<div class="ms-month-group"><div class="ms-month-head"><strong>${Utils.escapeHtml(group.ageLabel || `${group.month}月龄`)}</strong><span>${items.length}项</span></div>${items.map(item => this._itemHTML({ ...item, month: group.month }, model, { current: group.month === Math.floor(this._monthAge) })).join('')}</div>` : ''; }).join('') || '<p class="ms-empty-inline">当前筛选没有匹配项。</p>'}</div></section>`; }).join('')}</div>`;
+  },
+
+  _candidateHTML(model) {
+    const candidates = model.candidates;
+    if (!candidates.length) return this._panelState('candidates', 'empty', '暂无待确认候选', '新的权威事实产生后，候选会自动出现在这里。', false);
+    return `<div class="ms-list-card"><div class="ms-section-head"><div><h2>待确认</h2><p>确认后会同步到全部成就、月龄图谱和成就图鉴。</p></div><span class="ms-count-badge">${candidates.length}</span></div>${candidates.map(candidate => { const evidence = candidate.evidence || {}; const id = candidate.milestoneId || ''; const title = this._milestoneTitle(id) || candidate.milestoneLabel || candidate.triggerModule || candidate.ruleId || '里程碑候选'; const happenedAt = candidate.occurredAt || candidate.eventTime || candidate.createdAt || candidate.updatedAt || ''; const sourceId = candidate.sourceEventId || candidate.triggerEventId || evidence.sourceEventId || ''; return `<article class="ms-candidate-card" data-milestone-id="${Utils.jsAttr(id)}"><div class="ms-candidate-main"><button class="ms-link-button" type="button" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(id)}')">${Utils.escapeHtml(title)}</button><div class="ms-id">${Utils.escapeHtml(id || '未绑定 milestoneId')}</div><dl class="ms-detail-list"><div><dt>来源模块</dt><dd>${Utils.escapeHtml(candidate.sourceModule || candidate.triggerModule || '未知')}</dd></div><div><dt>触发原因</dt><dd>${Utils.escapeHtml(candidate.reason || candidate.triggerReason || candidate.ruleId || '规则命中')}</dd></div><div><dt>证据摘要</dt><dd>${Utils.escapeHtml(evidence.summary || evidence.description || sourceId || '暂无证据摘要')}</dd></div><div><dt>发生时间</dt><dd>${Utils.escapeHtml(happenedAt ? Utils.formatDate(happenedAt) : '未知')}</dd></div><div><dt>当前状态</dt><dd>${Utils.escapeHtml(candidate.status || 'WAITING_CONFIRMATION')}</dd></div></dl><button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.viewSource('${Utils.jsAttr(sourceId)}')">查看来源</button></div><div class="ms-candidate-actions"><button class="btn btn-success btn-sm" type="button" onclick="MilestonePage.reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',true)">确认</button><button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',false)">拒绝</button></div></article>`; }).join('')}</div>`;
+  },
+
+  _achievementRecords(model) {
+    const source = this._achievements?.allAchievements || model.records;
+    return (Array.isArray(source) ? source : []).filter(record => !this._filters.date || String(record.date || '').slice(0, 10) === this._filters.date).filter(record => this._filters.domain === '全部' || record.domain === this._filters.domain).filter(record => this._filters.source === '全部' || (record.sourceType || 'automatic') === this._filters.source).sort((a, b) => String(b.date || b.createdAt || '').localeCompare(String(a.date || a.createdAt || '')));
+  },
+
+  _achievementsHTML(model) {
+    const records = this._achievementRecords(model);
+    const domains = ['全部', ...new Set(model.records.map(record => record.domain).filter(Boolean))];
+    const sources = ['全部', 'automatic', 'candidate', 'manual', 'photo'];
+    return `<div class="ms-achievements-wrap"><div class="ms-section-head"><div><h2>全部成就</h2><p>统一查看自动完成、候选确认、手工记录和照片打卡。</p></div><span class="ms-count-badge">${records.filter(record => !record.deletedAt).length}</span></div><div class="ms-filter-bar ms-achievement-filters"><label>日期<input type="date" aria-label="按日期筛选" value="${Utils.jsAttr(this._filters.date)}" onchange="MilestonePage.setFilter('date',this.value)"></label><label>领域<select aria-label="按成就领域筛选" onchange="MilestonePage.setFilter('domain',this.value)">${domains.map(value => `<option ${value === this._filters.domain ? 'selected' : ''}>${Utils.escapeHtml(value)}</option>`).join('')}</select></label><label>来源<select aria-label="按成就来源筛选" onchange="MilestonePage.setFilter('source',this.value)">${sources.map(value => `<option value="${Utils.jsAttr(value)}" ${value === this._filters.source ? 'selected' : ''}>${Utils.escapeHtml(value === '全部' ? value : this._sourceLabel(value))}</option>`).join('')}</select></label></div>${records.length ? `<div class="ms-achievement-list">${records.map(record => { const id = record.milestoneId || getMilestoneId(record.milestoneKey); return `<article class="ms-achievement-item ${record.deletedAt ? 'is-deleted' : ''}"><div><button class="ms-link-button" type="button" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(id || '')}')">${Utils.escapeHtml(record.milestoneLabel || this._milestoneTitle(id) || record.milestoneKey || '里程碑成就')}</button><div class="ms-id">${Utils.escapeHtml(id || '自定义记录')}</div><div class="ms-achievement-meta"><span>${Utils.escapeHtml(record.domain || '未分类')}</span><span>${Utils.escapeHtml(this._sourceLabel(record.sourceType))}</span><span>${Utils.escapeHtml(Utils.formatDate(record.date))}</span>${record.deletedAt ? '<span>已删除</span>' : ''}</div>${record.note ? `<p>备注：${Utils.escapeHtml(record.note)}</p>` : ''}</div><div class="ms-achievement-actions">${id ? `<button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(id)}')">回到图谱</button>` : ''}${record.deletedAt ? `<button class="btn btn-secondary btn-sm" type="button" onclick="MilestonePage.restoreRecord('${Utils.jsAttr(record._id)}')">恢复</button>` : `<button class="btn-icon" type="button" aria-label="删除成就" title="删除" onclick="MilestonePage.deleteRecord('${Utils.jsAttr(record._id)}')">${Lucide.icon('trash-2', 16)}</button>`}</div></article>`; }).join('')}</div>` : this._panelState('achievements', 'empty', '暂无已完成成就', '完成一项里程碑后会出现在这里。', false)}</div>`;
+  },
+
+  _catalogHTML() {
+    const badges = Array.isArray(this._achievements?.badges) ? this._achievements.badges : [];
+    const combinations = Array.isArray(this._achievements?.combinations) ? this._achievements.combinations : [];
+    if (!badges.length && !combinations.length) return this._panelState('catalog', 'partial', '成就图鉴暂不可用', '服务未返回徽章和组合成就数据，其他 Tab 仍可使用。');
+    const badgeRows = badges.map(badge => `<article class="ms-badge-item ${badge.unlocked ? 'is-unlocked' : 'is-locked'}"><button class="ms-link-button" type="button" onclick="MilestonePage.focusMilestone('${Utils.jsAttr(badge.milestoneId || '')}')">${Lucide.icon(badge.unlocked ? 'badge-check' : 'award', 18)} ${Utils.escapeHtml(badge.name || badge.id || '徽章')}</button><div class="ms-id">关联 ${Utils.escapeHtml(badge.milestoneId || '未绑定 milestoneId')}</div><p>${Utils.escapeHtml(badge.condition || badge.desc || '暂无解锁条件')}</p><div class="ms-achievement-meta"><span>${badge.unlocked ? '已解锁' : '未解锁'}</span><span>${badge.unlocked ? Utils.escapeHtml(Utils.formatDate(badge.unlockedAt || badge.date || badge.record?.date || '')) : `进度 ${Utils.escapeHtml(String(badge.progress ?? 0))}`}</span></div></article>`).join('');
+    const comboRows = combinations.map(combo => { const required = combo.requiredBadges || []; const missing = combo.missingBadges || []; const unlockedCount = combo.unlockedBadgeCount ?? 0; return `<article class="ms-combination-item ${combo.unlocked ? 'is-unlocked' : 'is-locked'}"><h3>${Utils.escapeHtml(combo.name || combo.id || '组合成就')}</h3><div class="ms-id">${unlockedCount}/${required.length} 枚徽章</div><p>${Utils.escapeHtml(combo.condition || combo.desc || '集齐要求徽章')}</p><div class="ms-achievement-meta"><span>${combo.unlocked ? '已解锁' : '未解锁'}</span><span>${missing.length ? '缺少：' + missing.map(id => `<button class="ms-inline-link" type="button" onclick="MilestonePage.focusBadge('${Utils.jsAttr(id)}')">${Utils.escapeHtml(id)}</button>`).join('、') : '已满足条件'}</span></div></article>`; }).join('');
+    return `<div class="ms-catalog-wrap"><div class="ms-section-head"><div><h2>成就图鉴</h2><p>徽章与组合成就均来自服务端 achievements 返回值。</p></div></div><section class="ms-catalog-section"><div class="ms-section-head"><h3>成就徽章</h3><span class="ms-count-badge">${badges.filter(badge => badge.unlocked).length}/${badges.length}</span></div><div class="ms-badge-grid">${badgeRows}</div></section><section class="ms-catalog-section"><div class="ms-section-head"><h3>组合成就</h3><span class="ms-count-badge">${combinations.filter(combo => combo.unlocked).length}/${combinations.length}</span></div><div class="ms-combination-list">${comboRows || '<p class="ms-empty-inline">暂无组合成就数据。</p>'}</div></section></div>`;
+  },
+
+  async _loadCandidates() {
+    const result = await API.listMilestoneCandidates();
+    return result?.records || [];
   },
 
   async render(container) {
     this._container = container;
+    container.setAttribute('aria-busy', 'true');
+    container.innerHTML = this._shellHTML();
+    this._applyTabVisibility(this._activeTab);
+    V3UI.setStatus('loading', '里程碑加载中');
     const baby = Utils.getBabyInfo();
     if (!baby || !baby._id) {
-      container.innerHTML = `<div class="empty-state"><div class="empty-icon">${Lucide.icon('star', 32)}</div><p>请先创建宝宝档案</p></div>`;
+      this._setPanel('progress', this._panelState('progress', 'empty', '请先创建宝宝档案', '创建档案后才能查看里程碑。', false));
+      container.removeAttribute('aria-busy');
+      V3UI.setStatus('empty', '请先创建宝宝档案');
       return;
     }
+    this._monthAge = Utils.calcMonthAge(baby.birthDate);
+    const [recordsResult, candidatesResult] = await Promise.allSettled([API.listMilestone(), this._loadCandidates()]);
+    this._records = recordsResult.status === 'fulfilled' ? (recordsResult.value?.records || []) : [];
+    this._achievements = recordsResult.status === 'fulfilled' ? (recordsResult.value?.achievements || {}) : {};
+    this._candidateRecords = candidatesResult.status === 'fulfilled' ? candidatesResult.value : [];
+    const model = this._model();
+    const recordError = recordsResult.status === 'rejected' ? this._stateFromError(recordsResult.reason) : '';
+    const candidateError = candidatesResult.status === 'rejected' ? this._stateFromError(candidatesResult.reason) : '';
+    this._setPanel('progress', recordError ? this._panelState('progress', recordError, '成长进度加载失败', '其他成功区域仍可使用。') : `<div data-ms-tab-loaded="progress">${this._progressHTML(model)}</div>`);
+    this._setPanel('graph', recordError ? this._panelState('graph', recordError, '月龄图谱加载失败', '请重新加载图谱数据。') : `<div data-ms-tab-loaded="graph">${this._graphHTML(model)}</div>`);
+    this._setPanel('candidates', candidateError ? this._panelState('candidates', candidateError, '待确认加载失败', '其他成功区域仍可使用。') : `<div data-ms-tab-loaded="candidates">${this._candidateHTML(model)}</div>`);
+    this._setPanel('achievements', recordError ? this._panelState('achievements', recordError, '全部成就加载失败', '请重新加载成就数据。') : `<div data-ms-tab-loaded="achievements">${this._achievementsHTML(model)}</div>`);
+    this._setPanel('catalog', recordError ? this._panelState('catalog', recordError, '成就图鉴加载失败', '请重新加载 achievements 数据。') : `<div data-ms-tab-loaded="catalog">${this._catalogHTML()}</div>`);
+    this._updateTabCounts(model);
+    container.removeAttribute('aria-busy');
+    V3UI.setStatus(recordError || candidateError ? 'partial' : 'loaded', recordError || candidateError ? '部分内容加载失败' : '');
+    if (this._focusedMilestoneId) this._scrollToFocus();
+  },
 
-    const monthAge = Utils.calcMonthAge(baby.birthDate);
-    this._monthAge = monthAge;
-    const ms = getMilestoneByAge(monthAge);
+  _shellHTML() {
+    return `<div class="ms-page" data-ms-page="five-business-tabs"><nav class="v3-subtabs ms-tabs" role="tablist" aria-label="里程碑分类">${this._tabs.map(([key, icon, label]) => `<button type="button" class="v3-subtab" data-ms-tab="${key}" role="tab" aria-selected="false" aria-controls="ms-panel-${key}" onclick="MilestonePage.switchTab('${key}')">${Lucide.icon(icon, 15)}<span>${label}</span><b class="v3-subtab-count" data-ms-count="${key}">0</b></button>`).join('')}</nav><div class="ms-tab-panels">${this._tabs.map(([key]) => `<section id="ms-panel-${key}" class="ms-business-panel" data-ms-panel="${key}" role="tabpanel"><div class="ms-panel-loading" data-ms-loading="${key}">${this._panelState(key, 'loading', '加载中', '正在加载本区域。', false)}</div></section>`).join('')}</div></div>`;
+  },
 
-    let achievedData;
-    try {
-      achievedData = await API.listMilestone();
-    } catch (error) {
-      const state = this._stateFromError(error);
-      container.innerHTML = this._stateHTML(state, error.message);
-      container.dataset.v3State = state;
-      return;
-    }
-    const achievedRecords = achievedData?.records || [];
-    this._records = achievedRecords;
-    this._achievements = achievedData?.achievements || { badges: [], combinations: [] };
-    this._unlockedBadges = this._achievements.badges || achievedRecords.filter(r => r.badgeId || r.photoUrl);
-    const achievedMap = {};
-    achievedRecords.forEach(r => {
-      const key = r.milestoneId || getMilestoneId(r.milestoneKey);
-      if (key) achievedMap[key] = r;
-      if (r.milestoneKey && key !== r.milestoneKey) achievedMap[r.milestoneKey] = r;
-    });
+  _setPanel(tab, html) {
+    const panel = this._container?.querySelector(`[data-ms-panel="${tab}"]`);
+    if (!panel) return;
+    panel.innerHTML = html;
+    panel.dataset.msState = panel.querySelector('[data-ms-state]')?.dataset.msState || 'loaded';
+  },
 
-    const customMilestones = [
-      { key: '第一次微笑', domain: '社交' }, { key: '笑出声', domain: '社交' },
-      { key: '翻身', domain: '大运动' }, { key: '吃辅食', domain: '认知' },
-      { key: '叫妈妈', domain: '语言' }, { key: '叫爸爸', domain: '语言' },
-      { key: '坐起来', domain: '大运动' }, { key: '爬行', domain: '大运动' },
-      { key: '站起来', domain: '大运动' }, { key: '走路', domain: '大运动' },
-      { key: '长牙', domain: '认知' }, { key: '游泳', domain: '社交' },
-      { key: '去公园', domain: '社交' }, { key: '看海', domain: '社交' }
-    ];
+  _updateTabCounts(model) {
+    const counts = { progress: model.allItems.length, graph: model.allItems.length, candidates: model.candidates.length, achievements: this._achievementRecords(model).filter(record => !record.deletedAt).length, catalog: (this._achievements.badges || []).length };
+    Object.entries(counts).forEach(([key, count]) => { const el = this._container?.querySelector(`[data-ms-count="${key}"]`); if (el) el.textContent = String(count); });
+  },
 
-    // v95 #3：删除「本月关注」引导条（与里程碑页信息重复）
-    let html = '';
-
-    // ===== 1. 待确认候选 =====
-    let candidateZone;
-    try {
-      candidateZone = await this._candidateHTML();
-    } catch (error) {
-      const state = this._stateFromError(error);
-      candidateZone = `<section class="v3-state-wrap v3-state-partial" data-v3-state="partial" data-ms-partial-error="candidates">${this._stateHTML(state, error.message)}</section>`;
-      if (window.V3UI?.setStatus) V3UI.setStatus('partial', '部分内容加载失败');
-    }
-
-    // ===== 2. 当月（这一阶段）=====
-    const groups = (window.MILESTONE_STANDARD || []).filter(g => g.month <= Math.max(1, Math.floor(monthAge || 1)));
-    const curGroup = ms.current[0];
-    html += `<div class="card ms-age-groups"><div class="card-title">${Lucide.icon('calendar', 18)} 月龄里程碑</div>${[['1-12月龄', groups.filter(g => g.month >= 1 && g.month <= 12)],['12-24月龄', groups.filter(g => g.month > 12 && g.month <= 24)],['24-36月龄', groups.filter(g => g.month > 24 && g.month <= 36)]].map(([label, ageGroups], index) => `<div class="ms-age-group"><button class="ms-age-group-head" onclick="MilestonePage._toggleCollapse('ms-age-${index}')"><strong>${label}</strong><span>${ageGroups.reduce((n, g) => n + g.items.length, 0)}项　</span></button><div id="ms-age-${index}" class="ms-age-group-body" style="display:${index === 0 ? 'block' : 'none'}">${ageGroups.map(g => `<div class="ms-month-row"><strong>${g.ageLabel || g.month + '月龄'}</strong><span>${g.items.length}项</span></div>${g.items.filter(m => !achievedMap[m.milestoneId || getMilestoneId(m.skill)] && !achievedMap[m.skill]).map(m => this._renderItem(m, achievedMap, { clickable: true })).join('') || '<div class="text-muted" style="font-size:12px;padding:8px 0">当前阶段已完成</div>'}`).join('')}</div></div>`).join('')}</div>
-      <div class="card">
-        <div class="card-title">${Lucide.icon('star', 18)} ${curGroup.month} 月龄 · 本月里程碑</div>
-        <p class="text-muted" style="font-size:12px;margin-bottom:8px">点击勾选宝宝已掌握的技能，一键记录（可在记录后补写备注）</p>
-        ${curGroup.items.map(m => this._renderItem(m, achievedMap, { clickable: true })).join('')}
-        ${this._devRefHTML(monthAge)}
-      </div>`;
-
-    // ===== 2. 上月未勾选（已过阶段未掌握）=====
-    const missed = [];
-    ms.previous.forEach(g => g.items.forEach(m => { if (!achievedMap[m.milestoneId || getMilestoneId(m.skill)] && !achievedMap[m.skill]) missed.push({ ...m, passMonth: g.month }); }));
-    if (missed.length > 0) {
-      html += `
-      <div class="card" style="border-color:var(--color-highlight-border, #FFD591)">
-        <div class="card-title" style="cursor:pointer" onclick="MilestonePage._toggleCollapse('ms-missed')">${Lucide.icon('alert-triangle', 18)} 已过阶段未掌握 <span class="ms-badge-warn">${missed.length}</span><span style="float:right;color:var(--color-text-tertiary)">▾</span></div>
-        <div id="ms-missed" style="display:none">
-          <p class="text-muted" style="font-size:12px;margin-bottom:8px">这些里程碑已过应掌握月龄，仍未勾选。晚一点掌握也正常，可继续记录；若明显滞后（如 18 个月仍不会独走）建议就医评估。</p>
-          ${missed.map(m => this._renderItem(m, achievedMap, { clickable: true, note: '已过 ' + m.passMonth + ' 月龄' })).join('')}
-        </div>
-      </div>`;
-    } else if (ms.previous.length > 0) {
-      html += `
-      <div class="card" style="background:var(--color-success-soft, #F6FFED);border-color:var(--color-success-border, #B7EB8F)">
-        <div class="card-title">${Lucide.icon('check-circle', 18)} 已过阶段里程碑全部掌握</div>
-      </div>`;
-    }
-
-    // ===== 3. 下一阶段预告 =====
-    if (ms.next.length > 0) {
-      const nextGroup = ms.next[0];
-      const moreCount = ms.next.slice(1).reduce((n, g) => n + g.items.length, 0);
-      html += `
-      <div class="card">
-        <div class="card-title">${Lucide.icon('eye', 18)} ${nextGroup.month} 月龄 · 下一阶段预告</div>
-        <p class="text-muted" style="font-size:12px;margin-bottom:8px">提前了解接下来的能力发展，不必刻意训练</p>
-        ${nextGroup.items.map(m => this._renderItem(m, achievedMap, { clickable: false })).join('')}
-        ${moreCount > 0 ? `<div class="text-muted" style="font-size:12px;text-align:center;margin-top:8px">还有 ${ms.next.length - 1} 个后续阶段（${moreCount} 项），随月龄自动进入「本月里程碑」</div>` : ''}
-      </div>`;
-    }
-
-    // ===== 4.（v95 #3：原「发育参考（细节）」独立折叠卡已删除，融合进本月里程碑卡）=====
-
-    // ===== 5. 第一次记录（自定义）=====
-    html += `
-      <div class="card">
-        <div class="card-title">第一次记录</div>
-        <p class="text-muted" style="font-size:12px;margin-bottom:8px">点击即可记录宝宝的每一个"第一次"</p>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          ${customMilestones.map(m => {
-            const milestoneId = getMilestoneId(m.key);
-            const rec = achievedMap[milestoneId] || achievedMap[m.key];
-            const click = rec ? '' : `App.recordMilestone('${Utils.jsAttr(milestoneId)}', '${Utils.jsAttr(m.domain)}', '${Utils.jsAttr(m.key)}')`;
-            return `
-              <button class="btn ${rec ? 'btn-success' : 'btn-secondary'}" style="font-size:13px;padding:8px 12px" onclick="${click}">
-                ${rec ? Lucide.icon('check', 14) + ' ' : ''}${Utils.escapeHtml(m.key)}
-              </button>
-            `;
-          }).join('')}
-        </div>
-        <button class="btn btn-primary btn-block mt-16" onclick="App.openMilestoneForm()">${Lucide.icon('plus', 16)} 自定义里程碑</button>
-      </div>`;
-
-    // ===== 6. 已记录的里程碑 =====
-    html += `
-      ${(achievedData?.records || []).length > 0 ? `
-      <div class="card">
-        <div class="card-title">${Lucide.icon('clipboard-list', 18)} 已记录 (${achievedData.records.length})</div>
-        ${achievedData.records.map(r => `
-          <div class="record-item">
-            <div class="record-main">
-              <div class="record-title">${Utils.escapeHtml(r.milestoneLabel || r.milestoneKey)}</div>
-              <div class="record-meta">${Utils.formatDate(r.date)}${r.note ? ' · ' + Utils.escapeHtml(r.note) : ''}</div>
-            </div>
-            <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap" onclick="MilestonePage._editNote('${r._id}')">${Lucide.icon('edit-3', 14)} 备注</button>
-            ${r.deletedAt ? `<button class="btn btn-secondary" onclick="MilestonePage._restoreRecord('${Utils.jsAttr(r._id)}')">恢复</button>` : `<button class="todo-del" onclick="App._deleteMilestone('${Utils.jsAttr(r._id)}')">&times;</button>`}
-          </div>
-        `).join('')}
-      </div>` : ''}
-    `;
-
-    const ageProgressZone = `<section class="v3-subtab-panel ms-zone ms-age-progress" data-ms-panel="monthly" data-ms-zone="age-progress" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('calendar', 18)} 月龄进度 · ${monthAge}个月</div><p class="text-muted">当前阶段：${Utils.escapeHtml(curGroup.ageLabel || `${curGroup.month}月龄`)}；已确认记录会同步更新徽章和组合成就。</p>${html}</section>`;
-    const badgeZone = this._badgesHTML().replace('class="ms-zone ms-badges"', 'class="v3-subtab-panel ms-zone ms-badges" data-ms-panel="badges"');
-    const combinationZone = this._combinationsHTML().replace('class="ms-zone ms-combinations"', 'class="v3-subtab-panel ms-zone ms-combinations" data-ms-panel="combinations"');
-    const allAchievements = this._achievements?.allAchievements || achievedRecords;
-    const sourceLabels = { automatic: '自动完成', candidate: '候选确认', manual: '手工记录', photo: '照片打卡' };
-    const confirmedZone = `<section class="v3-subtab-panel ms-zone ms-confirmed" data-ms-panel="confirmed" data-ms-zone="all-achievements" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('clipboard-check', 18)} 全部成就</div>${allAchievements.length ? allAchievements.map(r => `<article class="record-item" data-achievement-id="${Utils.jsAttr(r.achievementId || r.milestoneId || r._id || '')}"><div class="record-main"><strong>${Utils.escapeHtml(r.milestoneLabel || this._milestoneTitle(r.milestoneId) || r.milestoneKey || '里程碑成就')}</strong><div class="record-meta">${Utils.escapeHtml(r.domain || '')} · ${Utils.escapeHtml(sourceLabels[r.sourceType] || '记录完成')} · ${Utils.formatDate(r.date)}${r.note ? ` · ${Utils.escapeHtml(r.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已完成成就。</p>'}</section>`;
-    const candidatePanel = `<section class="v3-subtab-panel ms-zone ms-candidates" data-ms-panel="candidates" data-ms-zone="candidates" role="tabpanel">${candidateZone}</section>`;
-    const tabs = [['monthly', 'calendar', '月龄进度', groups.length], ['candidates', 'clock-3', '待确认', this._candidateRecords.length], ['confirmed', 'clipboard-check', '全部成就', allAchievements.length], ['badges', 'award', '成就徽章', this._unlockedBadges.length], ['combinations', 'layers', '组合成就', (this._achievements?.combinations || []).filter(item => item.unlocked).length]];
-    const activeTab = tabs.some(item => item[0] === this._activeTab) ? this._activeTab : 'monthly';
-    container.innerHTML = `<div class="ms-page" data-ms-page="five-tabs"><nav class="v3-subtabs ms-tabs" role="tablist" aria-label="里程碑分类">${tabs.map(([key, icon, label, count]) => `<button type="button" class="v3-subtab ${activeTab === key ? 'is-active' : ''}" role="tab" aria-selected="${activeTab === key}" onclick="MilestonePage.switchTab('${key}')">${Lucide.icon(icon, 15)}<span>${label}</span><b class="v3-subtab-count">${count}</b></button>`).join('')}</nav><div class="ms-tab-panels">${ageProgressZone}${candidatePanel}${confirmedZone}${badgeZone}${combinationZone}</div></div>`;
-    container.querySelectorAll('[data-ms-panel]').forEach(panel => { panel.hidden = panel.dataset.msPanel !== activeTab; });
-    this._bindPhotoUpload(container);
+  _applyTabVisibility(active) {
+    this._activeTab = active;
+    const root = this._container;
+    if (!root) return;
+    root.querySelectorAll('[data-ms-panel]').forEach(panel => { panel.hidden = panel.dataset.msPanel !== active; });
+    root.querySelectorAll('[data-ms-tab]').forEach(button => { const selected = button.dataset.msTab === active; button.classList.toggle('is-active', selected); button.setAttribute('aria-selected', String(selected)); });
   },
 
   switchTab(tab) {
-    this._activeTab = tab;
-    const root = this._container;
-    if (!root) return;
-    root.querySelectorAll('.ms-tabs .v3-subtab').forEach(button => {
-      const active = button.getAttribute('onclick')?.includes(`'${tab}'`);
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-selected', String(active));
-    });
-    root.querySelectorAll('[data-ms-panel]').forEach(panel => { panel.hidden = panel.dataset.msPanel !== tab; });
-    window.V3UI?.setStatus?.('loaded', '');
+    if (!this._tabs.some(item => item[0] === tab)) return;
+    this._applyTabVisibility(tab);
+    V3UI.setStatus('loaded', '');
+    if (tab === 'graph' && this._focusedMilestoneId) this._scrollToFocus();
   },
 
-  _milestoneTitle(milestoneId) {
-    if (!milestoneId) return '';
-    return (window.MILESTONE_STANDARD || []).flatMap(group => group.items || []).find(item => item.milestoneId === milestoneId)?.skill || '';
+  retryTab() { return this.reload(); },
+
+  setFilter(key, value) {
+    this._filters[key] = value || (key === 'date' ? '' : '全部');
+    if (this._container) this.render(this._container);
   },
 
-  _badgesHTML() {
-    const definitions = window.BADGE_SYSTEM?.badges || [];
-    const unlocked = new Map((this._achievements?.badges || []).filter(item => item.unlocked).map(item => [item.id, item]));
-    const badges = (this._achievements?.badges?.length ? this._achievements.badges : definitions).filter(badge => !badge.monthWindow || this._monthAge >= badge.monthWindow[0]);
-    const progress = this._achievements?.badgeProgress || { unlocked: unlocked.size, total: definitions.length };
-    return `<section class="ms-zone ms-badges" data-ms-zone="badges"><div class="card"><div class="card-title">成就徽章 <span class="text-muted">已获得${progress.unlocked}/${progress.total}个</span></div><p class="text-muted" style="font-size:12px">根据已确认的真实里程碑动态计算。</p><div class="badge-grid">${badges.map(b => { const record = unlocked.get(b.id); return `<button class="badge-card ${record ? 'unlocked' : 'locked'}" data-badge-id="${Utils.jsAttr(b.id)}" data-milestone-id="${Utils.jsAttr(b.milestoneId || '')}" data-badge-name="${Utils.jsAttr(b.name)}" aria-pressed="${record ? 'true' : 'false'}"><span class="badge-card-icon">${Lucide.icon(record ? 'badge-check' : 'award', 22)}</span><strong>${Utils.escapeHtml(b.name)}</strong><small>${record ? `已点亮 · ${Utils.escapeHtml(record.record?.date || '')}` : '未解锁'}</small></button>`; }).join('')}</div></div></section>`;
-  },
-  _combinationsHTML() {
-    const combinations = this._achievements?.combinations || [];
-    const progress = this._achievements?.combinationProgress || { unlocked: combinations.filter(item => item.unlocked).length, total: combinations.length };
-    return `<section class="ms-zone ms-combinations" data-ms-zone="combinations"><div class="card"><div class="card-title">组合成就 <span class="text-muted">${progress.unlocked}/${progress.total}</span></div>${combinations.length ? combinations.map(item => `<div class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(item.name)}</strong><div class="record-meta">${item.unlocked ? '已解锁' : '未解锁'} · ${item.unlockedBadgeCount || 0}/${item.requiredBadgeCount || item.requiredBadges.length} 枚徽章</div></div></div>`).join('') : '<p class="text-muted">暂无组合成就。</p>'}</div></section>`;
+  resetFilters() {
+    this._filters = { domain: '全部', status: '全部', source: '全部', date: '' };
+    if (this._container) this.render(this._container);
   },
 
-  _allAchievementsHTML() {
-    const records = this._achievements?.allAchievements || this._records || [];
-    return `<section class="ms-zone ms-all-achievements" data-ms-zone="all-achievements"><div class="card"><div class="card-title">全部成就 <span class="text-muted">${records.length}项</span></div>${records.length ? records.map(record => `<article class="record-item" data-achievement-id="${Utils.jsAttr(record.achievementId || record.milestoneId || record._id || '')}"><div class="record-main"><strong>${Utils.escapeHtml(record.milestoneLabel || this._milestoneTitle(record.milestoneId) || record.milestoneKey || '里程碑成就')}</strong><div class="record-meta">${Utils.escapeHtml(record.sourceType || 'automatic')} · ${Utils.formatDate(record.date)}${record.note ? ` · ${Utils.escapeHtml(record.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已完成成就。</p>'}</div></section>`;
+  toggleBand(id) {
+    const body = document.getElementById(id);
+    if (!body) return;
+    const expanded = body.hidden;
+    body.hidden = !expanded;
+    body.previousElementSibling?.setAttribute('aria-expanded', String(expanded));
   },
 
-  _bindPhotoUpload(root) {
-    if (!root || root.__photoBound) return;
-    root.__photoBound = true;
-    root.addEventListener('click', e => { const card = e.target.closest?.('[data-badge-id]'); if (!card) return; if (card.dataset.badgeId === 'first_tooth' && card.classList.contains('unlocked')) { showPage('medical'); setTimeout(() => MedicalPage.switchHealthTab('teeth'), 0); return; } this._openBadgeCheckin(card.dataset.badgeId, card.dataset.badgeName); });
+  focusMilestone(milestoneId) {
+    if (!milestoneId) return;
+    this._focusedMilestoneId = milestoneId;
+    this._filters.domain = '全部';
+    this._filters.status = '全部';
+    this._activeTab = 'graph';
+    if (this._container) this.render(this._container);
   },
 
-  _openBadgeCheckin(badgeId, badgeName) {
-    App._showModal(`${Lucide.icon('camera', 18)} ${Utils.escapeHtml(badgeName)} · 照片打卡`, `<div class="form-group"><label>发生日期</label><input id="badge-date" class="form-input" type="date" value="${Utils.todayStr()}"></div><div class="form-group"><label>照片</label><input id="badge-photo" class="form-input" type="file" accept="image/*"></div><button class="btn btn-primary btn-block" onclick="MilestonePage._submitBadge('${Utils.jsAttr(badgeId)}','${Utils.jsAttr(badgeName)}')">上传并点亮</button>`);
+  _scrollToFocus() {
+    setTimeout(() => document.getElementById(`ms-item-${this._focusedMilestoneId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 30);
   },
 
-  async _submitBadge(badgeId, badgeName) {
-    const file = document.getElementById('badge-photo')?.files?.[0];
-    const date = document.getElementById('badge-date')?.value || Utils.todayStr();
-    if (!file) return Utils.showToast('请先选择照片');
-    try { Utils.showProcessing('正在压缩照片...'); const blob = await this._compressImage(file, .8, 800, 800); const base64 = await this._blobToBase64(blob); const uploaded = await API.uploadMilestonePhoto(base64); await API.createMilestone({ milestoneKey: badgeId, badgeId, milestoneLabel: badgeName, domain: 'badge', date, photoUrl: uploaded.photoUrl, note: '照片打卡解锁' }); Utils.hideLoading(); Utils.showToast('徽章已点亮'); await this.reload(); } catch (e) { Utils.hideLoading(); Utils.showToast('点亮失败：' + e.message); }
+  viewSource(sourceEventId) {
+    V3UI.setStatus('loaded', sourceEventId ? `来源记录：${sourceEventId}` : '来源记录不可用');
   },
 
-  _compressImage(file, quality, maxWidth, maxHeight) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = e => { const img = new Image(); img.onload = () => { let w = img.width, h = img.height; const scale = Math.min(1, maxWidth / w, maxHeight / h); w = Math.round(w * scale); h = Math.round(h * scale); const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; canvas.getContext('2d').drawImage(img, 0, 0, w, h); canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('照片压缩失败')), 'image/jpeg', quality); }; img.onerror = () => reject(new Error('照片读取失败')); img.src = e.target.result; }; reader.onerror = reject; reader.readAsDataURL(file); }); },
-  _blobToBase64(blob) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); }); },
-
-
-  /** 刷新当前页 */
-  async reload() {
-    if (this._container) await this.render(this._container);
+  focusBadge(badgeId) {
+    const badge = (this._achievements?.badges || []).find(item => item.id === badgeId);
+    if (badge?.milestoneId) this.focusMilestone(badge.milestoneId);
+    else { this._activeTab = 'catalog'; V3UI.setStatus('loaded', `徽章：${badgeId}`); this._applyTabVisibility('catalog'); }
   },
 
-  /**
-   * v95 #3：本月发育参考（融合进本月里程碑卡）
-   * 从 GROSS_MOTOR_TIMELINE / TEETH_SCHEDULE 中筛出与当前月龄相关的条目，
-   * 大运动取「正在范围内」的技能，乳牙取「正在萌出窗口」或「下一颗」。
-   */
-  _devRefHTML(monthAge) {
-    if (monthAge == null) return '';
-    const parseRange = (s) => {
-      const m = String(s || '').match(/(\d+)\s*-\s*(\d+)/);
-      return m ? [parseInt(m[1], 10), parseInt(m[2], 10)] : null;
-    };
-
-    // 大运动：range 覆盖当前月龄
-    const motors = (window.GROSS_MOTOR_TIMELINE || []).filter(t => {
-      const r = parseRange(t.range);
-      return r && monthAge >= r[0] && monthAge <= r[1];
-    }).slice(0, 3);
-
-    // 乳牙：萌出窗口内的；若都没有，取下一颗（起始月龄最近的）
-    const teethAll = window.TEETH_SCHEDULE || [];
-    let teeth = teethAll.filter(t => {
-      const r = parseRange(t.months);
-      return r && monthAge >= r[0] && monthAge <= r[1];
-    });
-    if (!teeth.length) {
-      const next = teethAll.map(t => ({ t, r: parseRange(t.months) }))
-        .filter(x => x.r && x.r[0] > monthAge)
-        .sort((a, b) => a.r[0] - b.r[0])[0];
-      teeth = next ? [next.t] : [];
-    } else {
-      teeth = teeth.slice(0, 2);
+  async reviewCandidate(candidateId, approved) {
+    V3UI.setStatus('submitting', approved ? '正在确认候选' : '正在拒绝候选');
+    try {
+      const result = await API.confirmMilestoneCandidate(candidateId, approved);
+      if (result?.dataVersion) Utils.storage.set('dv', result.dataVersion);
+      V3UI.setStatus('success', approved ? '候选已确认' : '候选已拒绝');
+      await this.reload();
+    } catch (error) {
+      V3UI.setStatus(this._stateFromError(error), approved ? '确认失败' : '拒绝失败');
     }
-
-    if (!motors.length && !teeth.length) return '';
-
-    const row = (left, mid, right) => `
-      <div class="milestone-timeline-row">
-        <span class="tl-name">${Utils.escapeHtml(left)}</span>
-        <span class="tl-months">${Utils.escapeHtml(right)}</span>
-      </div>
-      <div class="tl-note" style="padding:0 12px 6px">${Utils.escapeHtml(mid)}</div>`;
-
-    return `
-      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--color-border-subtle, #EEE)">
-        <div class="card-title" style="font-size:13px;margin-top:0">${Lucide.icon('dumbbell', 15)} 本月发育参考</div>
-        ${motors.length ? `
-          <div class="milestone-timeline">${motors.map(t => row(t.skill + '（' + t.majority + '多数掌握）', t.note, t.range)).join('')}</div>` : ''}
-        ${teeth.length ? `
-          <div class="card-title" style="font-size:13px;margin-top:10px">${Lucide.icon('smile', 15)} 乳牙窗口</div>
-          <div class="milestone-timeline">${teeth.map(t => row('第' + t.order + '颗 · ' + t.name, t.desc, t.months)).join('')}</div>
-          <div class="tl-tip">${Lucide.icon('lightbulb', 14)} 第一颗乳牙 13 个月内萌出均属正常，顺序个体差异大；2-3 岁 20 颗长齐。</div>` : ''}
-      </div>`;
   },
 
-  /** 单个里程碑项渲染 */
-  _renderItem(m, achievedMap, opts) {
-    const milestoneId = m.milestoneId || getMilestoneId(m.skill);
-    const rec = achievedMap[milestoneId] || achievedMap[m.skill];
-    const clickable = opts && opts.clickable;
-    const msClick = (clickable && !rec) ? `App.recordMilestone('${Utils.jsAttr(milestoneId)}', '${Utils.jsAttr(m.domain)}', '${Utils.jsAttr(m.skill)}')` : '';
-    return `
-      <div class="milestone-item">
-        <div class="milestone-check ${rec ? 'checked' : ''} ${clickable ? 'ms-clickable' : ''}" onclick="${msClick}">${rec ? Lucide.icon('check', 14) : ''}</div>
-        <div class="milestone-info">
-          <span class="milestone-domain ${m.domain}">${m.domain}</span>
-          <span class="milestone-skill">${Utils.escapeHtml(m.skill)}</span>
-          ${opts && opts.note ? `<span class="ms-pass-note">${Utils.escapeHtml(opts.note)}</span>` : ''}
-          <div class="milestone-desc">${Utils.escapeHtml(m.desc)}</div>
-          ${rec
-            ? `<div class="milestone-date">${Lucide.icon('check', 14)} ${Utils.formatDate(rec.date)} 已记录 <a style="color:var(--color-accent);cursor:pointer" onclick="MilestonePage._editNote('${rec._id}')">${Lucide.icon('edit-3', 12)} 补备注</a></div>`
-            : (m.warning ? `<div class="milestone-warning">${Lucide.icon('alert-triangle', 14)} ${Utils.escapeHtml(m.warning)}</div>` : '')}
-          ${m.training ? `<div class="milestone-training">${Lucide.icon('lightbulb', 14)} ${Utils.escapeHtml(m.training)}</div>` : ''}
-        </div>
-      </div>
-    `;
+  openManualRecord(milestoneId) {
+    const item = (window.MILESTONE_STANDARD || []).flatMap(group => group.items || []).find(row => row.milestoneId === milestoneId);
+    if (!item) return;
+    App._showModal(`记录“${Utils.escapeHtml(item.skill)}”`, `<div class="form-group"><label>日期</label><input type="date" id="ms-manual-date" class="form-input" value="${Utils.todayStr()}"></div><div class="form-group"><label>备注</label><input type="text" id="ms-manual-note" class="form-input" placeholder="可选"></div><button class="btn btn-primary btn-block" type="button" onclick="MilestonePage.submitManualRecord('${Utils.jsAttr(milestoneId)}')">保存</button>`);
   },
 
-  /** 折叠/展开卡片 */
-  _toggleCollapse(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.display = el.style.display === 'none' ? 'block' : 'none';
-  },
-
-  /** 补备注 */
-  _editNote(recordId) {
-    App._showModal(`${Lucide.icon('edit-3', 18)} 补备注（可选）`, `
-      <div class="form-group"><label>备注</label><input type="text" id="ms-note-edit" class="form-input" placeholder="记录这一刻的感受，或留空取消"></div>
-      <button class="btn btn-primary btn-block" onclick="MilestonePage._saveNote('${recordId}')">保存</button>
-    `);
-  },
-
-  async _saveNote(recordId) {
-    const note = document.getElementById('ms-note-edit')?.value?.trim() || '';
+  async submitManualRecord(milestoneId) {
+    const item = (window.MILESTONE_STANDARD || []).flatMap(group => group.items || []).find(row => row.milestoneId === milestoneId);
+    const date = document.getElementById('ms-manual-date')?.value || Utils.todayStr();
+    const note = document.getElementById('ms-manual-note')?.value || '';
+    if (!item) return;
     Utils.showLoading('保存中...');
     try {
-      const data = await API.updateMilestone(recordId, { note });
+      const result = await API.createMilestone({ milestoneId, milestoneKey: item.skill, milestoneLabel: item.skill, domain: item.domain, date, note });
       Utils.hideLoading();
       App._closeModal();
-      if (data && data.dataVersion) Utils.storage.set('dv', data.dataVersion);
-      Utils.showToast(note ? '备注已保存' : '已更新');
+      if (result?.dataVersion) Utils.storage.set('dv', result.dataVersion);
+      Utils.showToast('已记录');
       await this.reload();
-    } catch (e) {
+    } catch (error) {
       Utils.hideLoading();
-      Utils.showToast('保存失败: ' + e.message);
+      V3UI.setStatus(this._stateFromError(error), '保存失败');
+      Utils.showToast('保存失败，请稍后重试');
     }
-  }
+  },
+
+  async deleteRecord(recordId) {
+    if (!recordId || !window.confirm('确认删除此成就记录？')) return;
+    V3UI.setStatus('submitting', '正在删除成就');
+    try { await API.deleteMilestone(recordId); V3UI.setStatus('success', '成就已删除'); await this.reload(); } catch (error) { V3UI.setStatus(this._stateFromError(error), '删除失败'); }
+  },
+
+  async restoreRecord(recordId) {
+    V3UI.setStatus('submitting', '正在恢复成就');
+    try { await API.restoreMilestone(recordId); V3UI.setStatus('success', '成就已恢复'); await this.reload(); } catch (error) { V3UI.setStatus(this._stateFromError(error), '恢复失败'); }
+  },
+
+  editNote(recordId) {
+    App._showModal('补备注', `<div class="form-group"><label>备注</label><input type="text" id="ms-note-edit" class="form-input" placeholder="可选"></div><button class="btn btn-primary btn-block" type="button" onclick="MilestonePage.saveNote('${Utils.jsAttr(recordId)}')">保存</button>`);
+  },
+
+  async saveNote(recordId) {
+    const note = document.getElementById('ms-note-edit')?.value?.trim() || '';
+    Utils.showLoading('保存中...');
+    try { const result = await API.updateMilestone(recordId, { note }); Utils.hideLoading(); App._closeModal(); if (result?.dataVersion) Utils.storage.set('dv', result.dataVersion); Utils.showToast('备注已保存'); await this.reload(); } catch (error) { Utils.hideLoading(); V3UI.setStatus(this._stateFromError(error), '备注保存失败'); }
+  },
+
+  async reload() { if (this._container) await this.render(this._container); }
 };
