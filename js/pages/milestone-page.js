@@ -38,7 +38,7 @@ window.MilestonePage = {
     if (!candidates.length) {
       return `<section class="v3-state-wrap" data-ms-empty="true">${V3UI.stateHTML('empty', '暂无待确认候选', '新的权威事实产生后，候选会自动出现在这里。')}</section>`;
     }
-    return `<div class="card"><div class="card-title">候选确认 <span class="text-muted">${candidates.length}项</span></div>${candidates.map(candidate => `<article class="record-item"><div class="record-main"><div class="record-title">${Utils.escapeHtml(candidate.triggerModule || candidate.ruleId || '里程碑候选')}</div><div class="record-meta">证据：${Utils.escapeHtml(candidate.evidence?.sourceEventId || candidate.triggerEventId || '未知')} · ${Utils.escapeHtml(candidate.status || 'WAITING_CONFIRMATION')}</div></div><button class="btn btn-success btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',true)">确认</button><button class="btn btn-secondary btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',false)">拒绝</button></article>`).join('')}</div>`;
+    return `<div class="card"><div class="card-title">候选确认 <span class="text-muted">${candidates.length}项</span></div>${candidates.map(candidate => { const title = this._milestoneTitle(candidate.milestoneId) || candidate.milestoneLabel || candidate.triggerModule || candidate.ruleId || '里程碑候选'; return `<article class="record-item" data-milestone-id="${Utils.jsAttr(candidate.milestoneId || '')}"><div class="record-main"><div class="record-title">${Utils.escapeHtml(title)}</div><div class="record-meta">来源：${Utils.escapeHtml(candidate.sourceModule || candidate.triggerModule || '未知')} · 证据：${Utils.escapeHtml(candidate.evidence?.sourceEventId || candidate.triggerEventId || '未知')} · ${Utils.escapeHtml(candidate.status || 'WAITING_CONFIRMATION')}</div></div><button class="btn btn-success btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',true)">确认</button><button class="btn btn-secondary btn-sm" onclick="MilestonePage._reviewCandidate('${Utils.jsAttr(candidate.candidateId)}',false)">拒绝</button></article>`; }).join('')}</div>`;
   },
   async _reviewCandidate(candidateId, approved) {
     const container = this._container;
@@ -87,7 +87,11 @@ window.MilestonePage = {
     this._achievements = achievedData?.achievements || { badges: [], combinations: [] };
     this._unlockedBadges = this._achievements.badges || achievedRecords.filter(r => r.badgeId || r.photoUrl);
     const achievedMap = {};
-    achievedRecords.forEach(r => { achievedMap[r.milestoneKey] = r; });
+    achievedRecords.forEach(r => {
+      const key = r.milestoneId || getMilestoneId(r.milestoneKey);
+      if (key) achievedMap[key] = r;
+      if (r.milestoneKey && key !== r.milestoneKey) achievedMap[r.milestoneKey] = r;
+    });
 
     const customMilestones = [
       { key: '第一次微笑', domain: '社交' }, { key: '笑出声', domain: '社交' },
@@ -115,7 +119,7 @@ window.MilestonePage = {
     // ===== 2. 当月（这一阶段）=====
     const groups = (window.MILESTONE_STANDARD || []).filter(g => g.month <= Math.max(1, Math.floor(monthAge || 1)));
     const curGroup = ms.current[0];
-    html += `<div class="card ms-age-groups"><div class="card-title">${Lucide.icon('calendar', 18)} 月龄里程碑</div>${[['1-12月龄', groups.filter(g => g.month >= 1 && g.month <= 12)],['12-24月龄', groups.filter(g => g.month > 12 && g.month <= 24)],['24-36月龄', groups.filter(g => g.month > 24 && g.month <= 36)]].map(([label, ageGroups], index) => `<div class="ms-age-group"><button class="ms-age-group-head" onclick="MilestonePage._toggleCollapse('ms-age-${index}')"><strong>${label}</strong><span>${ageGroups.reduce((n, g) => n + g.items.length, 0)}项　</span></button><div id="ms-age-${index}" class="ms-age-group-body" style="display:${index === 0 ? 'block' : 'none'}">${ageGroups.map(g => `<div class="ms-month-row"><strong>${g.ageLabel || g.month + '月龄'}</strong><span>${g.items.length}项</span></div>${g.items.filter(m => !achievedMap[m.skill]).map(m => this._renderItem(m, achievedMap, { clickable: true })).join('') || '<div class="text-muted" style="font-size:12px;padding:8px 0">当前阶段已完成</div>'}`).join('')}</div></div>`).join('')}</div>
+    html += `<div class="card ms-age-groups"><div class="card-title">${Lucide.icon('calendar', 18)} 月龄里程碑</div>${[['1-12月龄', groups.filter(g => g.month >= 1 && g.month <= 12)],['12-24月龄', groups.filter(g => g.month > 12 && g.month <= 24)],['24-36月龄', groups.filter(g => g.month > 24 && g.month <= 36)]].map(([label, ageGroups], index) => `<div class="ms-age-group"><button class="ms-age-group-head" onclick="MilestonePage._toggleCollapse('ms-age-${index}')"><strong>${label}</strong><span>${ageGroups.reduce((n, g) => n + g.items.length, 0)}项　</span></button><div id="ms-age-${index}" class="ms-age-group-body" style="display:${index === 0 ? 'block' : 'none'}">${ageGroups.map(g => `<div class="ms-month-row"><strong>${g.ageLabel || g.month + '月龄'}</strong><span>${g.items.length}项</span></div>${g.items.filter(m => !achievedMap[m.milestoneId || getMilestoneId(m.skill)] && !achievedMap[m.skill]).map(m => this._renderItem(m, achievedMap, { clickable: true })).join('') || '<div class="text-muted" style="font-size:12px;padding:8px 0">当前阶段已完成</div>'}`).join('')}</div></div>`).join('')}</div>
       <div class="card">
         <div class="card-title">${Lucide.icon('star', 18)} ${curGroup.month} 月龄 · 本月里程碑</div>
         <p class="text-muted" style="font-size:12px;margin-bottom:8px">点击勾选宝宝已掌握的技能，一键记录（可在记录后补写备注）</p>
@@ -125,7 +129,7 @@ window.MilestonePage = {
 
     // ===== 2. 上月未勾选（已过阶段未掌握）=====
     const missed = [];
-    ms.previous.forEach(g => g.items.forEach(m => { if (!achievedMap[m.skill]) missed.push({ ...m, passMonth: g.month }); }));
+    ms.previous.forEach(g => g.items.forEach(m => { if (!achievedMap[m.milestoneId || getMilestoneId(m.skill)] && !achievedMap[m.skill]) missed.push({ ...m, passMonth: g.month }); }));
     if (missed.length > 0) {
       html += `
       <div class="card" style="border-color:var(--color-highlight-border, #FFD591)">
@@ -164,8 +168,9 @@ window.MilestonePage = {
         <p class="text-muted" style="font-size:12px;margin-bottom:8px">点击即可记录宝宝的每一个"第一次"</p>
         <div style="display:flex;flex-wrap:wrap;gap:8px">
           ${customMilestones.map(m => {
-            const rec = achievedMap[m.key];
-            const click = rec ? '' : `App.recordMilestone('${Utils.jsAttr(m.key)}', '${Utils.jsAttr(m.domain)}', '${Utils.jsAttr(m.key)}')`;
+            const milestoneId = getMilestoneId(m.key);
+            const rec = achievedMap[milestoneId] || achievedMap[m.key];
+            const click = rec ? '' : `App.recordMilestone('${Utils.jsAttr(milestoneId)}', '${Utils.jsAttr(m.domain)}', '${Utils.jsAttr(m.key)}')`;
             return `
               <button class="btn ${rec ? 'btn-success' : 'btn-secondary'}" style="font-size:13px;padding:8px 12px" onclick="${click}">
                 ${rec ? Lucide.icon('check', 14) + ' ' : ''}${Utils.escapeHtml(m.key)}
@@ -197,9 +202,11 @@ window.MilestonePage = {
     const ageProgressZone = `<section class="v3-subtab-panel ms-zone ms-age-progress" data-ms-panel="monthly" data-ms-zone="age-progress" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('calendar', 18)} 月龄进度 · ${monthAge}个月</div><p class="text-muted">当前阶段：${Utils.escapeHtml(curGroup.ageLabel || `${curGroup.month}月龄`)}；已确认记录会同步更新徽章和组合成就。</p>${html}</section>`;
     const badgeZone = this._badgesHTML().replace('class="ms-zone ms-badges"', 'class="v3-subtab-panel ms-zone ms-badges" data-ms-panel="badges"');
     const combinationZone = this._combinationsHTML().replace('class="ms-zone ms-combinations"', 'class="v3-subtab-panel ms-zone ms-combinations" data-ms-panel="combinations"');
-    const confirmedZone = `<section class="v3-subtab-panel ms-zone ms-confirmed" data-ms-panel="confirmed" data-ms-zone="confirmed" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('clipboard-check', 18)} 已确认里程碑</div>${achievedRecords.length ? achievedRecords.map(r => `<article class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(r.milestoneLabel || r.milestoneKey)}</strong><div class="record-meta">${Utils.escapeHtml(r.domain || '')} · ${Utils.formatDate(r.date)}${r.note ? ` · ${Utils.escapeHtml(r.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已确认里程碑。</p>'}</section>`;
+    const allAchievements = this._achievements?.allAchievements || achievedRecords;
+    const sourceLabels = { automatic: '自动完成', candidate: '候选确认', manual: '手工记录', photo: '照片打卡' };
+    const confirmedZone = `<section class="v3-subtab-panel ms-zone ms-confirmed" data-ms-panel="confirmed" data-ms-zone="all-achievements" role="tabpanel"><div class="ms-zone-title">${Lucide.icon('clipboard-check', 18)} 全部成就</div>${allAchievements.length ? allAchievements.map(r => `<article class="record-item" data-achievement-id="${Utils.jsAttr(r.achievementId || r.milestoneId || r._id || '')}"><div class="record-main"><strong>${Utils.escapeHtml(r.milestoneLabel || this._milestoneTitle(r.milestoneId) || r.milestoneKey || '里程碑成就')}</strong><div class="record-meta">${Utils.escapeHtml(r.domain || '')} · ${Utils.escapeHtml(sourceLabels[r.sourceType] || '记录完成')} · ${Utils.formatDate(r.date)}${r.note ? ` · ${Utils.escapeHtml(r.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已完成成就。</p>'}</section>`;
     const candidatePanel = `<section class="v3-subtab-panel ms-zone ms-candidates" data-ms-panel="candidates" data-ms-zone="candidates" role="tabpanel">${candidateZone}</section>`;
-    const tabs = [['monthly', 'calendar', '月龄进度', groups.length], ['candidates', 'clock-3', '待确认', this._candidateRecords.length], ['confirmed', 'clipboard-check', '已确认', achievedRecords.length], ['badges', 'award', '成就徽章', this._unlockedBadges.length], ['combinations', 'layers', '组合成就', (this._achievements?.combinations || []).filter(item => item.unlocked).length]];
+    const tabs = [['monthly', 'calendar', '月龄进度', groups.length], ['candidates', 'clock-3', '待确认', this._candidateRecords.length], ['confirmed', 'clipboard-check', '全部成就', allAchievements.length], ['badges', 'award', '成就徽章', this._unlockedBadges.length], ['combinations', 'layers', '组合成就', (this._achievements?.combinations || []).filter(item => item.unlocked).length]];
     const activeTab = tabs.some(item => item[0] === this._activeTab) ? this._activeTab : 'monthly';
     container.innerHTML = `<div class="ms-page" data-ms-page="five-tabs"><nav class="v3-subtabs ms-tabs" role="tablist" aria-label="里程碑分类">${tabs.map(([key, icon, label, count]) => `<button type="button" class="v3-subtab ${activeTab === key ? 'is-active' : ''}" role="tab" aria-selected="${activeTab === key}" onclick="MilestonePage.switchTab('${key}')">${Lucide.icon(icon, 15)}<span>${label}</span><b class="v3-subtab-count">${count}</b></button>`).join('')}</nav><div class="ms-tab-panels">${ageProgressZone}${candidatePanel}${confirmedZone}${badgeZone}${combinationZone}</div></div>`;
     container.querySelectorAll('[data-ms-panel]').forEach(panel => { panel.hidden = panel.dataset.msPanel !== activeTab; });
@@ -219,15 +226,27 @@ window.MilestonePage = {
     window.V3UI?.setStatus?.('loaded', '');
   },
 
+  _milestoneTitle(milestoneId) {
+    if (!milestoneId) return '';
+    return (window.MILESTONE_STANDARD || []).flatMap(group => group.items || []).find(item => item.milestoneId === milestoneId)?.skill || '';
+  },
+
   _badgesHTML() {
     const definitions = window.BADGE_SYSTEM?.badges || [];
-    const unlocked = new Map((this._achievements?.badges || []).filter(item => item.unlocked !== false).map(item => [item.id, item]));
-    const badges = definitions.filter(badge => !badge.monthWindow || this._monthAge >= badge.monthWindow[0]);
-    return `<section class="ms-zone ms-badges" data-ms-zone="badges"><div class="card"><div class="card-title">成就徽章 <span class="text-muted">已获得${unlocked.size}个</span></div><p class="text-muted" style="font-size:12px">根据已确认的真实里程碑动态计算。</p><div class="badge-grid">${badges.map(b => { const record = unlocked.get(b.id); return `<button class="badge-card ${record ? 'unlocked' : 'locked'}" data-badge-id="${Utils.jsAttr(b.id)}" data-badge-name="${Utils.jsAttr(b.name)}" aria-pressed="${record ? 'true' : 'false'}"><span class="badge-card-icon">${Utils.escapeHtml(b.icon || '')}</span><strong>${Utils.escapeHtml(b.name)}</strong><small>${record ? `已点亮 · ${Utils.escapeHtml(record.record?.date || '')}` : '未解锁'}</small></button>`; }).join('')}</div></div></section>`;
+    const unlocked = new Map((this._achievements?.badges || []).filter(item => item.unlocked).map(item => [item.id, item]));
+    const badges = (this._achievements?.badges?.length ? this._achievements.badges : definitions).filter(badge => !badge.monthWindow || this._monthAge >= badge.monthWindow[0]);
+    const progress = this._achievements?.badgeProgress || { unlocked: unlocked.size, total: definitions.length };
+    return `<section class="ms-zone ms-badges" data-ms-zone="badges"><div class="card"><div class="card-title">成就徽章 <span class="text-muted">已获得${progress.unlocked}/${progress.total}个</span></div><p class="text-muted" style="font-size:12px">根据已确认的真实里程碑动态计算。</p><div class="badge-grid">${badges.map(b => { const record = unlocked.get(b.id); return `<button class="badge-card ${record ? 'unlocked' : 'locked'}" data-badge-id="${Utils.jsAttr(b.id)}" data-milestone-id="${Utils.jsAttr(b.milestoneId || '')}" data-badge-name="${Utils.jsAttr(b.name)}" aria-pressed="${record ? 'true' : 'false'}"><span class="badge-card-icon">${Lucide.icon(record ? 'badge-check' : 'award', 22)}</span><strong>${Utils.escapeHtml(b.name)}</strong><small>${record ? `已点亮 · ${Utils.escapeHtml(record.record?.date || '')}` : '未解锁'}</small></button>`; }).join('')}</div></div></section>`;
   },
   _combinationsHTML() {
     const combinations = this._achievements?.combinations || [];
-    return `<section class="ms-zone ms-combinations" data-ms-zone="combinations"><div class="card"><div class="card-title">组合成就</div>${combinations.length ? combinations.map(item => `<div class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(item.name)}</strong><div class="record-meta">${item.unlocked ? '已解锁' : '未解锁'} · ${item.requiredBadges.length} 枚徽章</div></div></div>`).join('') : '<p class="text-muted">暂无组合成就。</p>'}</div></section>`;
+    const progress = this._achievements?.combinationProgress || { unlocked: combinations.filter(item => item.unlocked).length, total: combinations.length };
+    return `<section class="ms-zone ms-combinations" data-ms-zone="combinations"><div class="card"><div class="card-title">组合成就 <span class="text-muted">${progress.unlocked}/${progress.total}</span></div>${combinations.length ? combinations.map(item => `<div class="record-item"><div class="record-main"><strong>${Utils.escapeHtml(item.name)}</strong><div class="record-meta">${item.unlocked ? '已解锁' : '未解锁'} · ${item.unlockedBadgeCount || 0}/${item.requiredBadgeCount || item.requiredBadges.length} 枚徽章</div></div></div>`).join('') : '<p class="text-muted">暂无组合成就。</p>'}</div></section>`;
+  },
+
+  _allAchievementsHTML() {
+    const records = this._achievements?.allAchievements || this._records || [];
+    return `<section class="ms-zone ms-all-achievements" data-ms-zone="all-achievements"><div class="card"><div class="card-title">全部成就 <span class="text-muted">${records.length}项</span></div>${records.length ? records.map(record => `<article class="record-item" data-achievement-id="${Utils.jsAttr(record.achievementId || record.milestoneId || record._id || '')}"><div class="record-main"><strong>${Utils.escapeHtml(record.milestoneLabel || this._milestoneTitle(record.milestoneId) || record.milestoneKey || '里程碑成就')}</strong><div class="record-meta">${Utils.escapeHtml(record.sourceType || 'automatic')} · ${Utils.formatDate(record.date)}${record.note ? ` · ${Utils.escapeHtml(record.note)}` : ''}</div></div></article>`).join('') : '<p class="text-muted">暂无已完成成就。</p>'}</div></section>`;
   },
 
   _bindPhotoUpload(root) {
@@ -312,9 +331,10 @@ window.MilestonePage = {
 
   /** 单个里程碑项渲染 */
   _renderItem(m, achievedMap, opts) {
-    const rec = achievedMap[m.skill];
+    const milestoneId = m.milestoneId || getMilestoneId(m.skill);
+    const rec = achievedMap[milestoneId] || achievedMap[m.skill];
     const clickable = opts && opts.clickable;
-    const msClick = (clickable && !rec) ? `App.recordMilestone('${Utils.jsAttr(m.skill)}', '${Utils.jsAttr(m.domain)}', '${Utils.jsAttr(m.skill)}')` : '';
+    const msClick = (clickable && !rec) ? `App.recordMilestone('${Utils.jsAttr(milestoneId)}', '${Utils.jsAttr(m.domain)}', '${Utils.jsAttr(m.skill)}')` : '';
     return `
       <div class="milestone-item">
         <div class="milestone-check ${rec ? 'checked' : ''} ${clickable ? 'ms-clickable' : ''}" onclick="${msClick}">${rec ? Lucide.icon('check', 14) : ''}</div>

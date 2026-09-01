@@ -680,7 +680,7 @@ window.App = {
 
     Utils.showLoading('保存中...');
     try {
-      await API.createMilestone({ milestoneKey: skill, milestoneLabel: skill, domain: '自定义', date, note });
+      await API.createMilestone({ milestoneId: getMilestoneId(skill), milestoneKey: skill, milestoneLabel: skill, domain: '自定义', date, note });
       Utils.hideLoading();
       this._closeModal();
       Utils.showToast(' 已记录');
